@@ -1,15 +1,11 @@
 package org.powernukkitx.item.tools.copper;
 
-import org.powernukkitx.item.ItemTool;
+import org.powernukkitx.item.ItemTieredTool;
+import org.powernukkitx.item.ToolTier;
 
-public class ItemCopperSword extends ItemTool {
+public class ItemCopperSword extends ItemTieredTool {
     public ItemCopperSword() {
-        super(COPPER_SWORD);
-    }
-
-    @Override
-    public int getMaxDurability() {
-        return ItemTool.DURABILITY_COPPER;
+        super(COPPER_SWORD, ToolTier.TOOL_TIER_COPPER);
     }
 
     @Override
@@ -17,13 +13,4 @@ public class ItemCopperSword extends ItemTool {
         return true;
     }
 
-    @Override
-    public int getTier() {
-        return WEARABLE_TIER_COPPER;
-    }
-
-    @Override
-    public int getAttackDamage() {
-        return 4;
-    }
 }

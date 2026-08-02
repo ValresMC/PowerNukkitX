@@ -15,21 +15,6 @@ public class ItemCopperSpear extends ItemSpear {
     }
 
     public ItemCopperSpear(Integer meta, int count) {
-        super(COPPER_SPEAR, meta, count, "Copper Spear");
-    }
-
-    @Override
-    public int getMaxDurability() {
-        return ItemTool.DURABILITY_COPPER;
-    }
-
-    @Override
-    public int getTier() {
-        return ItemTool.TIER_COPPER;
-    }
-
-    @Override
-    public int getAttackDamage() {
-        return 3;
+        super(COPPER_SPEAR, meta, count, "Copper Spear", ToolTier.TOOL_TIER_COPPER);
     }
 }

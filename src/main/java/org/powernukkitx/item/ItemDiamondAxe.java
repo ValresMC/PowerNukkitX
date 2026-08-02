@@ -1,28 +1,13 @@
 package org.powernukkitx.item;
 
-public class ItemDiamondAxe extends ItemTool {
+public class ItemDiamondAxe extends ItemTieredTool {
     public ItemDiamondAxe() {
-        super(DIAMOND_AXE);
-    }
-
-    @Override
-    public int getMaxDurability() {
-        return ItemTool.DURABILITY_DIAMOND;
+        super(DIAMOND_AXE, ToolTier.TOOL_TIER_DIAMOND);
     }
 
     @Override
     public boolean isAxe() {
         return true;
-    }
-
-    @Override
-    public int getTier() {
-        return ItemTool.TIER_DIAMOND;
-    }
-
-    @Override
-    public int getAttackDamage() {
-        return 6;
     }
 
     @Override

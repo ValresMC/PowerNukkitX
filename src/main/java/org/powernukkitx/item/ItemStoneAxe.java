@@ -1,6 +1,6 @@
 package org.powernukkitx.item;
 
-public class ItemStoneAxe extends ItemTool {
+public class ItemStoneAxe extends ItemTieredTool {
 
     public ItemStoneAxe() {
         this(0, 1);
@@ -11,27 +11,12 @@ public class ItemStoneAxe extends ItemTool {
     }
 
     public ItemStoneAxe(Integer meta, int count) {
-        super(STONE_AXE, meta, count, "Stone Axe");
-    }
-
-    @Override
-    public int getMaxDurability() {
-        return ItemTool.DURABILITY_STONE;
+        super(STONE_AXE, meta, count, "Stone Axe", ToolTier.TOOL_TIER_STONE);
     }
 
     @Override
     public boolean isAxe() {
         return true;
-    }
-
-    @Override
-    public int getTier() {
-        return ItemTool.TIER_STONE;
-    }
-
-    @Override
-    public int getAttackDamage() {
-        return 4;
     }
 
     @Override

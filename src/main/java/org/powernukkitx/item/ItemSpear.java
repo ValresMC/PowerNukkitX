@@ -20,7 +20,7 @@ import org.jetbrains.annotations.Nullable;
  * @author xRookieFight
  * @since 16/31/2025
  */
-public abstract class ItemSpear extends ItemTool {
+public abstract class ItemSpear extends ItemTieredTool {
 
     public float MINIMUM_SPEED = 0.13f;
     public int MINIMUM_LUNGE_FOOD = 6;
@@ -28,6 +28,10 @@ public abstract class ItemSpear extends ItemTool {
 
     public ItemSpear(String id, Integer meta, int count, String name) {
         super(id, meta, count, name);
+    }
+
+    protected ItemSpear(String id, Integer meta, int count, String name, ToolTier toolTier) {
+        super(id, meta, count, name, toolTier);
     }
 
     @Override

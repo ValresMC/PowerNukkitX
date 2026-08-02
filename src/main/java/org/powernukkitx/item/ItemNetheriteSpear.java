@@ -15,21 +15,6 @@ public class ItemNetheriteSpear extends ItemSpear {
     }
 
     public ItemNetheriteSpear(Integer meta, int count) {
-        super(NETHERITE_SPEAR, meta, count, "Netherite Spear");
-    }
-
-    @Override
-    public int getMaxDurability() {
-        return ItemTool.DURABILITY_NETHERITE;
-    }
-
-    @Override
-    public int getTier() {
-        return ItemTool.TIER_NETHERITE;
-    }
-
-    @Override
-    public int getAttackDamage() {
-        return 6;
+        super(NETHERITE_SPEAR, meta, count, "Netherite Spear", ToolTier.TOOL_TIER_NETHERITE);
     }
 }

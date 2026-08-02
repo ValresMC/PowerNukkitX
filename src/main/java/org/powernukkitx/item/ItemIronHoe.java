@@ -1,6 +1,6 @@
 package org.powernukkitx.item;
 
-public class ItemIronHoe extends ItemTool {
+public class ItemIronHoe extends ItemTieredTool {
     public ItemIronHoe() {
         this(0, 1);
     }
@@ -10,21 +10,11 @@ public class ItemIronHoe extends ItemTool {
     }
 
     public ItemIronHoe(Integer meta, int count) {
-        super(IRON_HOE, meta, count, "Iron Hoe");
-    }
-
-    @Override
-    public int getMaxDurability() {
-        return ItemTool.DURABILITY_IRON;
+        super(IRON_HOE, meta, count, "Iron Hoe", ToolTier.TOOL_TIER_IRON);
     }
 
     @Override
     public boolean isHoe() {
         return true;
-    }
-
-    @Override
-    public int getTier() {
-        return ItemTool.TIER_IRON;
     }
 }

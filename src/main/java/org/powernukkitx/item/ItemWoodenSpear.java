@@ -15,21 +15,6 @@ public class ItemWoodenSpear extends ItemSpear {
     }
 
     public ItemWoodenSpear(Integer meta, int count) {
-        super(WOODEN_SPEAR, meta, count, "Wooden Spear");
-    }
-
-    @Override
-    public int getMaxDurability() {
-        return ItemTool.DURABILITY_WOODEN;
-    }
-
-    @Override
-    public int getTier() {
-        return ItemTool.TIER_WOODEN;
-    }
-
-    @Override
-    public int getAttackDamage() {
-        return 2;
+        super(WOODEN_SPEAR, meta, count, "Wooden Spear", ToolTier.TOOL_TIER_WOODEN);
     }
 }

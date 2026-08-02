@@ -1,6 +1,6 @@
 package org.powernukkitx.item;
 
-public class ItemWoodenSword extends ItemTool {
+public class ItemWoodenSword extends ItemTieredTool {
 
     public ItemWoodenSword() {
         this(0, 1);
@@ -11,12 +11,7 @@ public class ItemWoodenSword extends ItemTool {
     }
 
     public ItemWoodenSword(Integer meta, int count) {
-        super(WOODEN_SWORD, meta, count, "Wooden Sword");
-    }
-
-    @Override
-    public int getMaxDurability() {
-        return ItemTool.DURABILITY_WOODEN;
+        super(WOODEN_SWORD, meta, count, "Wooden Sword", ToolTier.TOOL_TIER_WOODEN);
     }
 
     @Override
@@ -24,13 +19,4 @@ public class ItemWoodenSword extends ItemTool {
         return true;
     }
 
-    @Override
-    public int getTier() {
-        return ItemTool.TIER_WOODEN;
-    }
-
-    @Override
-    public int getAttackDamage() {
-        return 4;
-    }
 }

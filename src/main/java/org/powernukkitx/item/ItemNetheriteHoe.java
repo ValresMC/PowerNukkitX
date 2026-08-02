@@ -1,6 +1,6 @@
 package org.powernukkitx.item;
 
-public class ItemNetheriteHoe extends ItemTool {
+public class ItemNetheriteHoe extends ItemTieredTool {
 
     public ItemNetheriteHoe() {
         this(0, 1);
@@ -11,27 +11,12 @@ public class ItemNetheriteHoe extends ItemTool {
     }
 
     public ItemNetheriteHoe(Integer meta, int count) {
-        super(NETHERITE_HOE, meta, count, "Netherite Hoe");
+        super(NETHERITE_HOE, meta, count, "Netherite Hoe", ToolTier.TOOL_TIER_NETHERITE);
     }
 
     @Override
     public boolean isHoe() {
         return true;
-    }
-
-    @Override
-    public int getAttackDamage() {
-        return 6;
-    }
-
-    @Override
-    public int getTier() {
-        return ItemTool.TIER_NETHERITE;
-    }
-
-    @Override
-    public int getMaxDurability() {
-        return ItemTool.DURABILITY_NETHERITE;
     }
 
     @Override

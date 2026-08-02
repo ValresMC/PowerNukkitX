@@ -15,21 +15,6 @@ public class ItemStoneSpear extends ItemSpear {
     }
 
     public ItemStoneSpear(Integer meta, int count) {
-        super(STONE_SPEAR, meta, count, "Stone Spear");
-    }
-
-    @Override
-    public int getMaxDurability() {
-        return ItemTool.DURABILITY_STONE;
-    }
-
-    @Override
-    public int getTier() {
-        return ItemTool.TIER_STONE;
-    }
-
-    @Override
-    public int getAttackDamage() {
-        return 3;
+        super(STONE_SPEAR, meta, count, "Stone Spear", ToolTier.TOOL_TIER_STONE);
     }
 }

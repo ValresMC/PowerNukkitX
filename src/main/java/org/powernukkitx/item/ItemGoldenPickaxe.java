@@ -1,6 +1,6 @@
 package org.powernukkitx.item;
 
-public class ItemGoldenPickaxe extends ItemTool {
+public class ItemGoldenPickaxe extends ItemTieredTool {
     public ItemGoldenPickaxe() {
         this(0, 1);
     }
@@ -10,12 +10,7 @@ public class ItemGoldenPickaxe extends ItemTool {
     }
 
     public ItemGoldenPickaxe(Integer meta, int count) {
-        super(GOLDEN_PICKAXE, meta, count, "Golden Pickaxe");
-    }
-
-    @Override
-    public int getMaxDurability() {
-        return ItemTool.DURABILITY_GOLD;
+        super(GOLDEN_PICKAXE, meta, count, "Golden Pickaxe", ToolTier.TOOL_TIER_GOLD);
     }
 
     @Override
@@ -23,13 +18,4 @@ public class ItemGoldenPickaxe extends ItemTool {
         return true;
     }
 
-    @Override
-    public int getTier() {
-        return ItemTool.TIER_GOLD;
-    }
-
-    @Override
-    public int getAttackDamage() {
-        return 2;
-    }
 }

@@ -15,21 +15,6 @@ public class ItemGoldenSpear extends ItemSpear {
     }
 
     public ItemGoldenSpear(Integer meta, int count) {
-        super(GOLDEN_SPEAR, meta, count, "Golden Spear");
-    }
-
-    @Override
-    public int getMaxDurability() {
-        return ItemTool.DURABILITY_GOLD;
-    }
-
-    @Override
-    public int getTier() {
-        return ItemTool.TIER_GOLD;
-    }
-
-    @Override
-    public int getAttackDamage() {
-        return 2;
+        super(GOLDEN_SPEAR, meta, count, "Golden Spear", ToolTier.TOOL_TIER_GOLD);
     }
 }

@@ -1,27 +1,12 @@
 package org.powernukkitx.item;
 
-public class ItemDiamondSword extends ItemTool {
+public class ItemDiamondSword extends ItemTieredTool {
     public ItemDiamondSword() {
-        super(DIAMOND_SWORD);
-    }
-
-    @Override
-    public int getMaxDurability() {
-        return ItemTool.DURABILITY_DIAMOND;
+        super(DIAMOND_SWORD, ToolTier.TOOL_TIER_DIAMOND);
     }
 
     @Override
     public boolean isSword() {
         return true;
-    }
-
-    @Override
-    public int getTier() {
-        return ItemTool.TIER_DIAMOND;
-    }
-
-    @Override
-    public int getAttackDamage() {
-        return 7;
     }
 }

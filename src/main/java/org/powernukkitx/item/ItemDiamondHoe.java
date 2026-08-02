@@ -1,22 +1,12 @@
 package org.powernukkitx.item;
 
-public class ItemDiamondHoe extends ItemTool {
+public class ItemDiamondHoe extends ItemTieredTool {
     public ItemDiamondHoe() {
-        super(DIAMOND_HOE);
-    }
-
-    @Override
-    public int getMaxDurability() {
-        return ItemTool.DURABILITY_DIAMOND;
+        super(DIAMOND_HOE, ToolTier.TOOL_TIER_DIAMOND);
     }
 
     @Override
     public boolean isHoe() {
         return true;
-    }
-
-    @Override
-    public int getTier() {
-        return ItemTool.TIER_DIAMOND;
     }
 }

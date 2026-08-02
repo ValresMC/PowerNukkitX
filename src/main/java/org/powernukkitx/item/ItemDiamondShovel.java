@@ -1,27 +1,12 @@
 package org.powernukkitx.item;
 
-public class ItemDiamondShovel extends ItemTool {
+public class ItemDiamondShovel extends ItemTieredTool {
     public ItemDiamondShovel() {
-        super(DIAMOND_SHOVEL);
-    }
-
-    @Override
-    public int getMaxDurability() {
-        return ItemTool.DURABILITY_DIAMOND;
+        super(DIAMOND_SHOVEL, ToolTier.TOOL_TIER_DIAMOND);
     }
 
     @Override
     public boolean isShovel() {
         return true;
-    }
-
-    @Override
-    public int getTier() {
-        return ItemTool.TIER_DIAMOND;
-    }
-
-    @Override
-    public int getAttackDamage() {
-        return 4;
     }
 }
