@@ -7,6 +7,7 @@ import org.powernukkitx.block.BlockAir;
 import org.powernukkitx.block.BlockID;
 import org.powernukkitx.block.BlockState;
 import org.powernukkitx.entity.Entity;
+import org.powernukkitx.event.entity.EntityDamageByEntityEvent;
 import org.powernukkitx.event.item.ItemWearEvent;
 import org.powernukkitx.event.player.PlayerItemConsumeEvent;
 import org.powernukkitx.inventory.HumanInventory;
@@ -2051,6 +2052,13 @@ public abstract class Item implements Cloneable, ItemID {
      */
     public boolean noDamageOnBreak() {
         return false;
+    }
+
+    public void onPostAttack(
+        Player attacker,
+        Entity target,
+        EntityDamageByEntityEvent event
+    ) {
     }
 
     /**
