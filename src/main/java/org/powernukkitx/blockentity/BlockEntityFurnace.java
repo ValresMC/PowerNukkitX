@@ -126,7 +126,7 @@ public class BlockEntityFurnace extends BlockEntitySpawnable implements RecipeIn
 
     @Override
     public void setName(String name) {
-        if (name == null || name.equals("")) {
+        if (name == null || name.isEmpty()) {
             this.nbt.remove("CustomName");
             return;
         }
@@ -298,7 +298,7 @@ public class BlockEntityFurnace extends BlockEntitySpawnable implements RecipeIn
         if (smelt != null) {
             canSmelt = (raw.getCount() > 0 && ((smelt.getResult().equals(product, true) && product.getCount() < product.getMaxStackSize()) || product.isNull()));
             //Check Input
-            if (!smelt.getInput().toItem().equals(raw, true, false)) {
+            if (!smelt.getInput().match(raw)) {
                 canSmelt = false;
             }
         }

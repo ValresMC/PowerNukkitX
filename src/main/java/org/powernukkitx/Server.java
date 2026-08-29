@@ -68,6 +68,7 @@ import org.powernukkitx.level.Position;
 import org.powernukkitx.level.format.IChunk;
 import org.powernukkitx.level.format.LevelConfig;
 import org.powernukkitx.level.format.LevelProvider;
+import org.powernukkitx.level.format.LevelProviderFactory;
 import org.powernukkitx.level.format.LevelProviderManager;
 import org.powernukkitx.level.format.leveldb.LevelDBProvider;
 import org.powernukkitx.level.tickingarea.manager.SimpleTickingAreaManager;
@@ -107,6 +108,7 @@ import org.powernukkitx.registry.RecipeRegistry;
 import org.powernukkitx.registry.Registries;
 import org.powernukkitx.registry.RegistryCache;
 import org.powernukkitx.resourcepacks.ResourcePackManager;
+import org.powernukkitx.resourcepacks.loader.CdnResourcePackLoader;
 import org.powernukkitx.resourcepacks.loader.JarPluginResourcePackLoader;
 import org.powernukkitx.resourcepacks.loader.ZippedResourcePackLoader;
 import org.powernukkitx.scheduler.ServerScheduler;
@@ -292,8 +294,6 @@ public class Server {
 
     // default levels
     private Level defaultLevel = null;
-    private boolean allowNether;
-    private boolean allowTheEnd;
     private List<ExperimentToggle> experiments;
 
     private final BedrockMigrationService migrationService = new BedrockMigrationService(this);
@@ -417,8 +417,6 @@ public class Server {
             return;
         }
 
-        this.allowNether = this.settings.gameplaySettings().allowNether();
-        this.allowTheEnd = this.settings.gameplaySettings().allowTheEnd();
         this.checkLoginTime = this.settings.networkSettings().checkLoginTime();
 
         log.info(this.getLanguage().tr("language.selected", getLanguage().getName(), getLanguage().getLang()));
@@ -600,7 +598,8 @@ public class Server {
         }
         this.resourcePackManager = new ResourcePackManager(
             new ZippedResourcePackLoader(new File(PowerNukkitX.DATA_PATH, "resource_packs")),
-            new JarPluginResourcePackLoader(new File(this.pluginPath)));
+            new JarPluginResourcePackLoader(new File(this.pluginPath)),
+            new CdnResourcePackLoader(this.settings.gameplaySettings()));
         this.commandMap = new SimpleCommandMap(this);
         this.pluginManager = new PluginManager(this, this.commandMap);
         this.pluginManager.subscribeToPermission(Server.BROADCAST_CHANNEL_ADMINISTRATIVE, this.consoleSender);
@@ -905,8 +904,6 @@ public class Server {
                 log.error("Exception while kicking player on shutdown", e);
             }
         }
-
-        this.getSettings().save();
 
         try {
             log.debug("Disabling all plugins");
@@ -2583,7 +2580,7 @@ public class Server {
      * Get world from world id, 0 OVERWORLD 1 NETHER 2 THE_END
      *
      * @param levelId world id
-     * @return level level instance
+     * @return level The Level instance
      */
     public Level getLevel(int levelId) {
         if (this.levels.containsKey(levelId)) {
@@ -2655,7 +2652,7 @@ public class Server {
             }
         } else {
             // verify the provider
-            Class<? extends LevelProvider> provider = LevelProviderManager.getProvider(path);
+            LevelProviderFactory provider = LevelProviderManager.getProviderFactory(path);
             if (provider == null) {
                 log.error(this.getLanguage().tr("nukkit.level.loadError", levelFolderName, "Unknown provider"));
                 return null;
@@ -2669,7 +2666,7 @@ public class Server {
                 DimensionEnum.NETHER.getDimensionData(), Collections.emptyMap()));
             map.put(2, new LevelConfig.GeneratorConfig("the_end", seed, false, LevelConfig.AntiXrayMode.LOW, true,
                 DimensionEnum.THE_END.getDimensionData(), Collections.emptyMap()));
-            levelConfig = new LevelConfig(LevelProviderManager.getProviderName(provider), true, map);
+            levelConfig = new LevelConfig(provider.getName(), true, map);
             try {
                 config.createNewFile();
                 FileUtils.write(config, JSONUtils.toPretty(levelConfig), StandardCharsets.UTF_8);
@@ -2699,9 +2696,9 @@ public class Server {
         }
         String pathS = Path.of(path).toString();
 
-        Class<? extends LevelProvider> provider = LevelProviderManager.getProvider(pathS);
+        LevelProviderFactory provider = LevelProviderManager.getProviderFactory(pathS);
         if (provider == null) {
-            provider = LevelProviderManager.getProviderByName(levelConfig.format());
+            provider = LevelProviderManager.getProviderFactoryByName(levelConfig.format());
         }
 
         Map<Integer, LevelConfig.GeneratorConfig> generators = levelConfig.generators();
@@ -2781,11 +2778,15 @@ public class Server {
         }
         for (var entry : levelConfig.generators().entrySet()) {
             LevelConfig.GeneratorConfig generatorConfig = entry.getValue();
-            var provider = LevelProviderManager.getProviderByName(levelConfig.format());
+            var provider = LevelProviderManager.getProviderFactoryByName(levelConfig.format());
+            if (provider == null) {
+                log.error(this.getLanguage().tr("nukkit.level.generationError", name,
+                    "Unknown provider " + levelConfig.format()));
+                return false;
+            }
             Level level;
             try {
-                provider.getMethod("generate", String.class, String.class, LevelConfig.GeneratorConfig.class)
-                    .invoke(null, path, name, generatorConfig);
+                provider.generate(path, name, generatorConfig);
                 String levelName = name
                     + (levelConfig.generators().size() > 1 ? entry.getValue().dimensionData().getSuffix() : "");
                 if (this.isLevelLoaded(levelName)) {
@@ -2861,6 +2862,7 @@ public class Server {
 
     public void setWhitelistMessage(String message) {
         this.settings.baseSettings().allowListMessage(message);
+        this.settings.save();
     }
 
     public boolean isOp(String name) {
@@ -3033,6 +3035,7 @@ public class Server {
         if (value > 3)
             value = 3;
         this.settings.gameplaySettings().difficulty(value);
+        this.settings.save();
     }
 
     /**
@@ -3040,6 +3043,16 @@ public class Server {
      */
     public boolean hasWhitelist() {
         return this.settings.baseSettings().allowList();
+    }
+
+    /**
+     * Enable or disable the server whitelist and persist the change.
+     *
+     * @param value whether the whitelist should be enforced
+     */
+    public void setWhitelist(boolean value) {
+        this.settings.baseSettings().allowList(value);
+        this.settings.save();
     }
 
     /**
@@ -3090,6 +3103,7 @@ public class Server {
      */
     public void setMotd(String motd) {
         this.settings.baseSettings().motd(motd);
+        this.settings.save();
         this.getNetwork().updatePong(this.getNetwork().getPong().motd(motd));
     }
 
@@ -3111,6 +3125,7 @@ public class Server {
      */
     public void setSubMotd(String subMotd) {
         this.settings.baseSettings().subMotd(subMotd);
+        this.settings.save();
         this.getNetwork().updatePong(this.getNetwork().getPong().subMotd(subMotd));
     }
 
@@ -3186,14 +3201,6 @@ public class Server {
 
     public void setProxyAuthProvider(ProxyAuthProvider proxyAuthProvider) {
         this.proxyAuthProvider = proxyAuthProvider;
-    }
-
-    public boolean isNetherAllowed() {
-        return this.allowNether;
-    }
-
-    public boolean isTheEndAllowed() {
-        return this.allowTheEnd;
     }
 
     public boolean canLogPacket(Class<? extends BedrockPacket> clazz) {

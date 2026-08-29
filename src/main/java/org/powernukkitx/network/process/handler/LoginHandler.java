@@ -3,6 +3,7 @@ package org.powernukkitx.network.process.handler;
 import io.netty.channel.EventLoop;
 import lombok.Value;
 import lombok.extern.slf4j.Slf4j;
+import org.cloudburstmc.protocol.bedrock.codec.BedrockCodec;
 import org.cloudburstmc.protocol.bedrock.data.DisconnectFailReason;
 import org.cloudburstmc.protocol.bedrock.data.PlayStatus;
 import org.cloudburstmc.protocol.bedrock.data.auth.PlayerAuthenticationType;
@@ -30,6 +31,7 @@ import org.powernukkitx.utils.SkinUtils;
 
 import javax.crypto.SecretKey;
 import java.security.PublicKey;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.function.Consumer;
@@ -61,10 +63,10 @@ public class LoginHandler implements PacketHandler<LoginPacket> {
         }
 
         final int clientNetworkVersion = packet.getClientNetworkVersion();
-        final int serverNetworkVersion = NetworkConstants.CODEC.getProtocolVersion();
+        final BedrockCodec codec = NetworkConstants.codecForProtocolVersion(clientNetworkVersion);
 
-        if (clientNetworkVersion != serverNetworkVersion) {
-            final boolean serverOutdated = clientNetworkVersion > serverNetworkVersion;
+        if (codec == null) {
+            final boolean serverOutdated = NetworkConstants.isServerOutdated(clientNetworkVersion);
             holder.sendPlayStatus(
                 serverOutdated ?
                     PlayStatus.LOGIN_FAILED_SERVER_OLD : PlayStatus.LOGIN_FAILED_CLIENT_OLD
@@ -73,33 +75,43 @@ public class LoginHandler implements PacketHandler<LoginPacket> {
             return;
         }
 
+        holder.getSession().setCodec(codec);
+
         final PlayerAuthenticationType type = packet.getAuthenticationType();
         if (type.equals(PlayerAuthenticationType.UNKNOWN)) {
             failLogin(holder, server, DisconnectFailReason.NOT_AUTHENTICATED, null);
             return;
         }
 
-        final boolean xboxAuthRequired = server.getSettings().baseSettings().xboxAuth();
-        if (xboxAuthRequired && (packet.getToken() == null || packet.getToken().isEmpty())) {
+        final boolean hasToken = packet.getToken() != null && !packet.getToken().isEmpty();
+        final List<String> chain = packet.getChain() != null ? List.copyOf(packet.getChain()) : List.of();
+        if (!hasToken && chain.isEmpty()) {
             failLogin(holder, server, DisconnectFailReason.NOT_AUTHENTICATED, null);
             return;
         }
 
-        final Credentials credentials = new Credentials(type, packet.getToken(), packet.getClientJwt());
+        final boolean xboxAuthRequired = server.getSettings().baseSettings().xboxAuth();
+        final Credentials credentials = new Credentials(type, packet.getToken(), chain, packet.getClientJwt());
 
         holder.setState(SessionState.AUTHENTICATING);
 
         offLoop(holder, server,
             () -> validateChain(credentials, server, xboxAuthRequired),
-            chain -> applyChain(chain, credentials, holder, server));
+            outcome -> applyChain(outcome, credentials, holder, server));
     }
 
     /**
      * Verifies the identity chain. First off-loop step, and the only one a login must pass before
      * the server decides whether it wants the player at all.
+     * <p>
+     * A client that is signed in sends a Mojang-issued token, while one that is not sends a
+     * self-signed certificate chain instead, so both forms have to be accepted here. Whether the
+     * identity ended up signed is what the xbox-auth check below reads.
      */
     private ChainOutcome validateChain(Credentials credentials, Server server, boolean xboxAuthRequired) throws Exception {
-        final ChainValidationResult result = EncryptionUtils.validateToken(credentials.authenticationType(), credentials.token());
+        final ChainValidationResult result = credentials.token() == null || credentials.token().isEmpty()
+            ? EncryptionUtils.validateChain(credentials.chain())
+            : EncryptionUtils.validateToken(credentials.authenticationType(), credentials.token());
         final boolean unsignedAllowed = server.getProxyAuthProvider() != null
             && server.getProxyAuthProvider().isUnsignedLoginAllowed();
         if (xboxAuthRequired && !result.signed() && !unsignedAllowed) {
@@ -195,7 +207,10 @@ public class LoginHandler implements PacketHandler<LoginPacket> {
             return;
         }
 
-        holder.getSession().setCodec(NetworkConstants.codecForGameVersion(clientChainData.getGameVersion()));
+        holder.getSession().setCodec(NetworkConstants.codecForGameVersion(
+            holder.getSession().getCodec().getProtocolVersion(),
+            clientChainData.getGameVersion()
+        ));
 
         holder.setPlayerInfo(new Player.PlayerInfo(identityClaims, clientChainData, client.skin(), signed));
 
@@ -316,7 +331,8 @@ public class LoginHandler implements PacketHandler<LoginPacket> {
      * The parts of the login packet the off-loop steps need, copied out on the network thread so
      * that nothing reads the packet once the pipeline has moved on from it.
      */
-    private record Credentials(PlayerAuthenticationType authenticationType, String token, String clientJwt) {
+    private record Credentials(PlayerAuthenticationType authenticationType, String token, List<String> chain,
+                               String clientJwt) {
     }
 
     /**

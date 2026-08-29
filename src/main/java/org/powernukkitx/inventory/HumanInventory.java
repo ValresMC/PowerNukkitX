@@ -174,9 +174,9 @@ public class HumanInventory extends BaseInventory {
     }
 
     /**
-     * Returns the item currently held in the player's off hand.
+     * Returns the item currently held in the player's offhand.
      *
-     * @return the item in the off hand
+     * @return the item in the offhand
      */
     public Item getItemInOffhand() {
         return this.getHolder().getOffhandInventory().getItem(0);
@@ -218,7 +218,7 @@ public class HumanInventory extends BaseInventory {
     }
 
     /**
-     * Sets the item in the player's off hand.
+     * Sets the item in the player's offhand.
      * <p>
      * Convenience wrapper for {@code getOffhandInventory().setItem(0, item)}.
      * The offhand uses a dedicated inventory, so direct access can be used if more control is needed.
@@ -231,7 +231,7 @@ public class HumanInventory extends BaseInventory {
     }
 
     /**
-     * Sets the item in the player's off hand.
+     * Sets the item in the player's offhand.
      * <p>
      * Convenience wrapper for {@code getOffhandInventory().setItem(0, item, bool)}.
      * The offhand uses a dedicated inventory, so direct access can be used if more control is needed.
@@ -748,7 +748,9 @@ public class HumanInventory extends BaseInventory {
         inventoryContentPacket.setContainerId(ContainerId.INVENTORY);
 
         for (int i = 0; i < ARMORS_INDEX; ++i) {
-            inventoryContentPacket.getSlots().add(this.getUnclonedItem(i).toNetwork());
+            final Item item = this.getUnclonedItem(i);
+            inventoryContentPacket.getSlots().add(item.isNull() ? ItemData.AIR : item.toNetwork()
+            );
         }
 
         player.sendPacketImmediately(inventoryContentPacket);
@@ -769,10 +771,12 @@ public class HumanInventory extends BaseInventory {
         inventoryContentPacket.setContainerId(ContainerId.ARMOR);
 
         for (final Item item : this.getArmorContents()) {
-            inventoryContentPacket.getSlots().add(item.toNetwork());
+            inventoryContentPacket.getSlots().add(
+                    item.isNull() ? ItemData.AIR : item.toNetwork()
+            );
         }
 
-        inventoryContentPacket.getSlots().add(Item.AIR.toNetwork());
+        inventoryContentPacket.getSlots().add(ItemData.AIR);
 
         player.sendPacketImmediately(inventoryContentPacket);
     }

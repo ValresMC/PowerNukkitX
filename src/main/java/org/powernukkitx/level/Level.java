@@ -14,6 +14,7 @@ import org.powernukkitx.block.property.CommonBlockProperties;
 import org.powernukkitx.blockentity.BlockEntity;
 import org.powernukkitx.blockentity.BlockEntitySpawnable;
 import org.powernukkitx.config.category.GameplaySettings;
+import org.powernukkitx.event.level.ChunkTickEvent;
 import org.powernukkitx.level.tickingarea.TickingArea;
 import org.powernukkitx.level.tickingarea.manager.TickingAreaManager;
 import org.powernukkitx.entity.Entity;
@@ -51,6 +52,9 @@ import org.powernukkitx.level.format.ChunkState;
 import org.powernukkitx.level.format.IChunk;
 import org.powernukkitx.level.format.LevelConfig;
 import org.powernukkitx.level.format.LevelProvider;
+import org.powernukkitx.level.format.LevelProviderFactory;
+import org.powernukkitx.level.format.LevelProviderManager;
+import org.powernukkitx.level.format.ReflectiveLevelProviderFactory;
 import org.powernukkitx.level.format.UnsafeChunk;
 import org.powernukkitx.level.format.leveldb.LevelDBProvider;
 import org.powernukkitx.level.generator.BiomedGenerator;
@@ -176,7 +180,7 @@ public class Level implements Metadatable {
             createTimeMarker(-4807795260250801598L, "minecraft:day", 1000, 24000),
             createTimeMarker(-1781951082890426794L, "minecraft:sunset", 12000, 24000)
     );
-    
+
     public static final int DIMENSION_OVERWORLD = 0;
     public static final int DIMENSION_NETHER = 1;
     public static final int DIMENSION_THE_END = 2;
@@ -416,7 +420,7 @@ public class Level implements Metadatable {
     /// antiXray system
     private AntiXraySystem antiXraySystem;
     private GameplaySettings gameplaySettings;
-    /** Cached {@code chunk-settings.lightUpdates}: gates all block/sky light work (boot-time only). */
+    /** Cached {@code chunk-settings.lightUpdates}: gates all block/skylight work (boot-time only). */
     private boolean lightUpdatesEnabled;
     /** Chunk hashes covered by ticking areas of this level; rebuilt when the ticking-area version changes. */
     private LongOpenHashSet tickingAreaChunkHashes;
@@ -469,6 +473,12 @@ public class Level implements Metadatable {
     ///
 
     public Level(Server server, String name, String path, int dimSum, Class<? extends LevelProvider> provider, LevelConfig.GeneratorConfig generatorConfig) {
+        this(server, name, path, dimSum,
+                new ReflectiveLevelProviderFactory(LevelProviderManager.getProviderName(provider), provider),
+                generatorConfig);
+    }
+
+    public Level(Server server, String name, String path, int dimSum, LevelProviderFactory providerFactory, LevelConfig.GeneratorConfig generatorConfig) {
         this.levelId = levelIdCounter++;
         this.dimensionCount = dimSum;
         this.blockMetadata = new BlockMetadataStore(this);
@@ -491,9 +501,9 @@ public class Level implements Metadatable {
         }
 
         try {
-            this.provider = new AtomicReference<>(provider.getConstructor(Level.class, String.class).newInstance(this, path));
-        } catch (ReflectiveOperationException e) {
-            throw new LevelException("Constructor of " + provider + " failed", e);
+            this.provider = new AtomicReference<>(providerFactory.create(this, path));
+        } catch (Exception e) {
+            throw new LevelException("Level provider " + providerFactory.getName() + " failed to open " + path, e);
         }
         LevelProvider levelProvider = requireProvider();
         //to be changed later as the Dim0 will be deleted to be put in a config.json file of the world
@@ -1489,10 +1499,14 @@ public class Level implements Metadatable {
 
                 // Only tick if the chunk is in use, helps to keep block ticks in sync when reload chunk
                 if (isChunkInUse(hash)) {
-                    BlockUpdateEvent event = new BlockUpdateEvent(block);
-                    this.server.getPluginManager().callEvent(event);
+                    boolean cancelled = false;
+                    if (!BlockUpdateEvent.getHandlers().isEmpty()) {
+                        BlockUpdateEvent event = new BlockUpdateEvent(block);
+                        this.server.getPluginManager().callEvent(event);
+                        cancelled = event.isCancelled();
+                    }
 
-                    if (!event.isCancelled()) {
+                    if (!cancelled) {
                         block.onUpdate(BLOCK_UPDATE_NORMAL);
                         if (queuedUpdate.neighbor != null) {
                             block.onNeighborChange(queuedUpdate.neighbor.getOpposite());
@@ -2163,6 +2177,11 @@ public class Level implements Metadatable {
      * runs first to reject them before the four-lookup neighbour check.
      */
     private void addResolvedTickChunk(long index, List<IChunk> resolved) {
+        if (!ChunkTickEvent.getHandlers().isEmpty()) {
+            ChunkTickEvent event = new ChunkTickEvent(this, index);
+            getServer().getPluginManager().callEvent(event);
+            if (event.isCancelled()) return;
+        }
         IChunk chunk = this.getChunk(getHashX(index), getHashZ(index), false);
         if (chunk == null) {
             return;
@@ -3217,8 +3236,9 @@ public class Level implements Metadatable {
         blockPrevious.level = this;
         blockPrevious.layer = layer;
 
-        BlockChangeEvent blockChangeEvent = new BlockChangeEvent(block, blockPrevious);
-        this.server.getPluginManager().callEvent(blockChangeEvent);
+        if (!BlockChangeEvent.getHandlers().isEmpty()) {
+            this.server.getPluginManager().callEvent(new BlockChangeEvent(block, blockPrevious));
+        }
 
         if (layer == 0) {
             this.villageManager.onBlockChange(blockPrevious, block);
@@ -3246,16 +3266,21 @@ public class Level implements Metadatable {
                 updateAllLight(block);
             }
 
-            BlockUpdateEvent ev = new BlockUpdateEvent(block);
-            this.server.getPluginManager().callEvent(ev);
-            if (!ev.isCancelled()) {
+            BlockUpdateEvent ev = null;
+            if (!BlockUpdateEvent.getHandlers().isEmpty()) {
+                ev = new BlockUpdateEvent(block);
+                this.server.getPluginManager().callEvent(ev);
+            }
+            if (ev == null || !ev.isCancelled()) {
                 if (!this.entities.isEmpty()) {
                     for (Entity entity : this.fastNearbyEntities(new SimpleAxisAlignedBB(x - 1, y - 1, z - 1, x + 1, y + 1, z + 1))) {
                         entity.scheduleUpdate();
                     }
                 }
 
-                block = ev.getBlock();
+                if (ev != null) {
+                    block = ev.getBlock();
+                }
                 block.onUpdate(BLOCK_UPDATE_NORMAL);
                 block.getLevelBlockAtLayer(layer == 0 ? 1 : 0).onUpdate(BLOCK_UPDATE_NORMAL);
                 this.updateAround(x, y, z);
@@ -3267,6 +3292,11 @@ public class Level implements Metadatable {
         }
 
         blockPrevious.afterRemoval(block, update);
+
+        if (layer == 0 && !(block instanceof BlockLiquid) && !(blockPrevious instanceof BlockLiquid)
+                && chunk.getBlockState(x & 0xF, y, z & 0xF, 1) != BlockAir.STATE) {
+            BlockLiquid.normalizeWaterloggedLayer(this, x, y, z);
+        }
 
         if (block instanceof CustomBlock customBlock) {
             CustomBlockDefinition def = customBlock.getDefinition();
@@ -5033,7 +5063,7 @@ public class Level implements Metadatable {
     }
 
     /**
-     * submit a unload chunk request.
+     * submit an unload chunk request.
      *
      * @param x    the x
      * @param z    the z
@@ -6380,7 +6410,7 @@ public class Level implements Metadatable {
     }
 
     /**
-     * Actual level ticks executed per wall-clock second, sampled over a ~1 second window.
+     * Actual level ticks executed per wall-clock second, sampled over a ~1-second window.
      * Unlike {@link GameLoop#getTps()} (a per-tick capacity estimate clamped to the target),
      * this reflects what the loop really achieved. 0 until the first window completes.
      */

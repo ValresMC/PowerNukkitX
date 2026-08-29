@@ -3897,18 +3897,32 @@ public abstract class Entity extends Location implements Metadatable, EntityID {
     }
 
     /**
+     * The scale applied to this entity while it is a baby.
+     * <p>
+     * Baby size is driven entirely by this factor, so {@link #getWidth()} and {@link #getHeight()}
+     * must always report the adult dimensions. Override this for entities whose baby form is not
+     * half the size of the adult.
+     * </p>
+     *
+     * @return the baby scale factor, {@code 0.5} by default.
+     */
+    public float getBabyScale() {
+        return 0.5f;
+    }
+
+    /**
      * Sets whether this entity is a baby.
      * <p>
      * Updates the {@link ActorFlags#BABY} data flag and applies the corresponding scale.
      * For ageable entities, this also initializes or clears growth-related NBT
-     * (birth date, remaining growth ticks, and pause state) and marks growth data as dirty.
+     * (birthdate, remaining growth ticks, and pause state) and marks growth data as dirty.
      * </p>
      *
      * @param value {@code true} to set as baby, {@code false} to set as adult.
      */
     public void setBaby(boolean value) {
         this.setDataFlag(ActorFlags.BABY, value);
-        this.setScale(value ? 0.5f : 1f);
+        this.setScale(value ? getBabyScale() : 1f);
 
         if (this.isAgeable()) {
             if (!value) {
@@ -4065,7 +4079,7 @@ public abstract class Entity extends Location implements Metadatable, EntityID {
         boolean baby = left > 0;
 
         setDataFlag(ActorFlags.BABY, baby, false);
-        setScale(baby ? 0.5f : 1f);
+        setScale(baby ? getBabyScale() : 1f);
 
         ticksGrowLeft = left;
 
@@ -4354,7 +4368,7 @@ public abstract class Entity extends Location implements Metadatable, EntityID {
      * Movement multipliers should be implemented in behavior executors.
      * This method is kept for backward compatibility only.
      * Bedrock entity definitions do not store generic movement multipliers;
-     * speed scaling is controlled by runtime behaviors such as
+     * speed scaling is controlled by runtime behaviors such as:
      * follow, tempt, boost, sprint, or rider input.
      * </p>
      *
@@ -5644,7 +5658,7 @@ public abstract class Entity extends Location implements Metadatable, EntityID {
      * @return boolean
      */
     public boolean setMotion(Vector3 motion) {
-        if (!this.justCreated) {
+        if (!this.justCreated && !EntityMotionEvent.getHandlers().isEmpty()) {
             EntityMotionEvent ev = new EntityMotionEvent(this, motion);
             this.server.getPluginManager().callEvent(ev);
             if (ev.isCancelled()) {
@@ -6209,7 +6223,7 @@ public abstract class Entity extends Location implements Metadatable, EntityID {
         if (change) {
             IntEntityProperty prop = getTypedEntityProperty(identifier, IntEntityProperty.class);
             if (prop != null && prop.isClientSync()) {
-                this.sendData(this.getViewers().values().toArray(new Player[0]));
+                this.sendData(this.getViewers().values().toArray(Player.EMPTY_ARRAY));
             }
         }
         return change;
@@ -6221,7 +6235,7 @@ public abstract class Entity extends Location implements Metadatable, EntityID {
         if (change) {
             BooleanEntityProperty property = getTypedEntityProperty(identifier, BooleanEntityProperty.class);
             if (property != null && property.isClientSync()) {
-                this.sendData(this.getViewers().values().toArray(new Player[0]));
+                this.sendData(this.getViewers().values().toArray(Player.EMPTY_ARRAY));
             }
         }
         return change;
@@ -6233,7 +6247,7 @@ public abstract class Entity extends Location implements Metadatable, EntityID {
         if (change) {
             FloatEntityProperty property = getTypedEntityProperty(identifier, FloatEntityProperty.class);
             if (property != null && property.isClientSync()) {
-                this.sendData(this.getViewers().values().toArray(new Player[0]));
+                this.sendData(this.getViewers().values().toArray(Player.EMPTY_ARRAY));
             }
         }
 
@@ -6250,7 +6264,7 @@ public abstract class Entity extends Location implements Metadatable, EntityID {
                 intProperties.put(identifier, index);
                 this.clientSyncPropertiesCache = null;
                 if (property.isClientSync()) {
-                    this.sendData(this.getViewers().values().toArray(new Player[0]));
+                    this.sendData(this.getViewers().values().toArray(Player.EMPTY_ARRAY));
                 }
                 return true;
             }
