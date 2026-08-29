@@ -522,11 +522,12 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
 
                 if (breakTick != this.lastSentBreakTick) {
                     if (useServerSideBreakVisuals) {
-                    final LevelEventPacket pk = new LevelEventPacket();
-                    pk.setType(LevelEvent.BLOCK_UPDATE_BREAK);
-                    pk.setPosition(Vector3f.from(this.breakingBlock.x, this.breakingBlock.y, this.breakingBlock.z));
-                    pk.setData(calculateNetworkBlockBreakSpeed(miningTimeRequired));
-                    this.getLevel().addChunkPacket(this.breakingBlock.getFloorX() >> 4, this.breakingBlock.getFloorZ() >> 4, pk);
+                        final LevelEventPacket pk = new LevelEventPacket();
+                        pk.setType(LevelEvent.BLOCK_UPDATE_BREAK);
+                        pk.setPosition(Vector3f.from(this.breakingBlock.x, this.breakingBlock.y, this.breakingBlock.z));
+                        pk.setData(calculateNetworkBlockBreakSpeed(miningTimeRequired));
+                        this.getLevel().addChunkPacket(this.breakingBlock.getFloorX() >> 4, this.breakingBlock.getFloorZ() >> 4, pk);
+                    }
                     this.lastSentBreakTick = breakTick;
                 }
 
