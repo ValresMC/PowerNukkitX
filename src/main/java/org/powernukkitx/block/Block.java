@@ -950,7 +950,7 @@ public abstract class Block extends Position implements Metadatable, AxisAligned
     public double calculateBreakTime(@NotNull Item item, @Nullable Player player) {
         double seconds = this.calculateBreakTimeNotInAir(item, player);
 
-        if (player != null) {
+        if (player != null && !player.isFlying()) {
             // The player is considered to be digging on the ground only after 5 ticks have passed since the last time the player was in the air.
             // If you only use onGround detection, the time returned by this method will be discontinuous.
             if (player.getLevel().getTick() - player.getLastInAirTick() < 5) {

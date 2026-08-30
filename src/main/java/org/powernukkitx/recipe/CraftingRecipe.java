@@ -15,6 +15,7 @@ public abstract class CraftingRecipe extends BaseRecipe {
     private final int netId;
     protected final RecipeUnlockingRequirement recipeUnlockingRequirement;
     private String craftingTag = "crafting_table";
+    private boolean hiddenUntilUnlocked;
 
     protected CraftingRecipe(String id, int netId, int priority, RecipeUnlockingRequirement recipeUnlockingRequirement) {
         super(id);
@@ -71,6 +72,27 @@ public abstract class CraftingRecipe extends BaseRecipe {
         );
 
         this.craftingTag = craftingTag;
+        return this;
+    }
+
+    /**
+     * Whether this recipe definition must remain hidden from the client
+     * until the player unlocks it.
+     */
+    public boolean isHiddenUntilUnlocked() {
+        return this.hiddenUntilUnlocked;
+    }
+
+    /**
+     * Configures whether this recipe remains completely hidden until unlocked.
+     *
+     * @param hiddenUntilUnlocked whether the recipe must be hidden
+     * @return this recipe
+     */
+    public CraftingRecipe setHiddenUntilUnlocked(
+        boolean hiddenUntilUnlocked
+    ) {
+        this.hiddenUntilUnlocked = hiddenUntilUnlocked;
         return this;
     }
 

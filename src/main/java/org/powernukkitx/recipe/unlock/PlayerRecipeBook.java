@@ -15,6 +15,7 @@ import org.powernukkitx.level.GameRule;
 import org.powernukkitx.nbt.tag.CompoundTag;
 import org.powernukkitx.nbt.tag.ListTag;
 import org.powernukkitx.nbt.tag.StringTag;
+import org.powernukkitx.recipe.CraftingRecipe;
 import org.powernukkitx.recipe.Recipe;
 import org.powernukkitx.registry.Registries;
 
@@ -133,6 +134,26 @@ public class PlayerRecipeBook implements InventoryListener {
         this.discoverFromInventory();
     }
 
+    public boolean canCraft(@NotNull Recipe recipe) {
+        if (!this.discovering) {
+            return true;
+        }
+
+        if (!(recipe instanceof CraftingRecipe craftingRecipe)) {
+            return true;
+        }
+
+        if (craftingRecipe.isHiddenUntilUnlocked()) {
+            return this.isUnlocked(recipe.getRecipeId());
+        }
+
+        if (craftingRecipe.getRequirement().getUnlockingContext() == null) {
+            return true;
+        }
+
+        return this.isUnlocked(recipe.getRecipeId());
+    }
+
     /**
      * Unlocks a single recipe and notifies the client. Fires {@link PlayerUnlockRecipeEvent}.
      *
@@ -149,6 +170,38 @@ public class PlayerRecipeBook implements InventoryListener {
     }
 
     /**
+     * Unlocks several recipes and notifies the client with one packet.
+     *
+     * @return the number of newly unlocked recipes
+     */
+    public int unlockRecipes(
+        @NotNull Collection<? extends Recipe> recipes
+    ) {
+        if (!this.discovering) {
+            return 0;
+        }
+
+        List<String> newlyUnlocked = new ObjectArrayList<>();
+
+        for (Recipe recipe : recipes) {
+            if (recipe != null && this.addUnlocked(recipe)) {
+                newlyUnlocked.add(recipe.getRecipeId());
+            }
+        }
+
+        if (newlyUnlocked.isEmpty()) {
+            return 0;
+        }
+
+        this.sendPacket(
+            UnlockedRecipesPacket.UnlockedRecipesPacketType.NEWLY_UNLOCKED,
+            newlyUnlocked
+        );
+
+        return newlyUnlocked.size();
+    }
+
+    /**
      * Removes a recipe from the book and hides it on the client again.
      *
      * @param recipe the recipe to lock
@@ -158,7 +211,19 @@ public class PlayerRecipeBook implements InventoryListener {
         if (!this.unlockedRecipes.remove(recipe.getRecipeId())) {
             return false;
         }
-        this.sendPacket(UnlockedRecipesPacket.UnlockedRecipesPacketType.REMOVE_UNLOCKED, List.of(recipe.getRecipeId()));
+
+        this.sendPacket(
+            UnlockedRecipesPacket.UnlockedRecipesPacketType.REMOVE_UNLOCKED,
+            List.of(recipe.getRecipeId())
+        );
+
+        if (
+            recipe instanceof CraftingRecipe craftingRecipe
+                && craftingRecipe.isHiddenUntilUnlocked()
+        ) {
+            this.player.getServer().sendRecipeList(this.player);
+        }
+
         return true;
     }
 
@@ -166,8 +231,23 @@ public class PlayerRecipeBook implements InventoryListener {
      * Empties the book and tells the client to forget everything it had unlocked.
      */
     public void reset() {
+        boolean hadHiddenRecipes = this.unlockedRecipes.stream()
+            .map(Registries.RECIPE::get)
+            .anyMatch(recipe ->
+                recipe instanceof CraftingRecipe craftingRecipe
+                    && craftingRecipe.isHiddenUntilUnlocked()
+            );
+
         this.unlockedRecipes.clear();
-        this.sendPacket(UnlockedRecipesPacket.UnlockedRecipesPacketType.REMOVE_ALL, List.of());
+
+        this.sendPacket(
+            UnlockedRecipesPacket.UnlockedRecipesPacketType.REMOVE_ALL,
+            List.of()
+        );
+
+        if (hadHiddenRecipes) {
+            this.player.getServer().sendRecipeList(this.player);
+        }
     }
 
     @Override
@@ -281,6 +361,12 @@ public class PlayerRecipeBook implements InventoryListener {
             return false;
         }
         this.unlockedRecipes.add(recipe.getRecipeId());
+
+        Registries.RECIPE.sendHiddenRecipeDefinition(
+            this.player,
+            recipe
+        );
+
         return true;
     }
 

@@ -45,6 +45,7 @@ import org.jetbrains.annotations.Nullable;
 
 import java.io.BufferedInputStream;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
@@ -52,6 +53,7 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.ref.WeakReference;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -77,7 +79,7 @@ public class LevelDBProvider implements LevelProvider {
     protected final Level level;
     protected final String path;
     protected CompoundTag worldDynamicProperties;
-    protected boolean worldDynamicPropertiesDirty = false;
+    protected boolean worldDynamicPropertiesDirty;
     /**
      * Network bytes an absent section serialises to, indexed by section Y offset into the byte
      * range. Sized from {@link Byte} because {@link ChunkSection#y()} is a {@code byte} that the
@@ -89,7 +91,7 @@ public class LevelDBProvider implements LevelProvider {
      * {@link #emptySectionPayload(int)}.
      */
     private static final AtomicReferenceArray<byte[]> EMPTY_SECTION_PAYLOADS =
-            new AtomicReferenceArray<>(1 << Byte.SIZE);
+        new AtomicReferenceArray<>(1 << Byte.SIZE);
     /**
      * Network bytes the biome palette of an absent section serialises to. One value for the whole
      * server: unlike the section payload this does not encode the section Y.
@@ -112,9 +114,9 @@ public class LevelDBProvider implements LevelProvider {
             this.storage = CACHE.computeIfAbsent(path, p -> {
                 try {
                     return new LevelDBStorage(0, p, new Options()
-                            .createIfMissing(true)
-                            .compressionType(CompressionType.ZLIB_RAW)
-                            .blockSize(64 * 1024));
+                        .createIfMissing(true)
+                        .compressionType(CompressionType.ZLIB_RAW)
+                        .blockSize(64 * 1024));
                 } catch (IOException e) {
                     throw new UncheckedIOException("Failed to create LevelDBStorage instance", e);
                 }
@@ -161,22 +163,36 @@ public class LevelDBProvider implements LevelProvider {
         return false;
     }
 
-    public static void writeLevelDat(String pathName, DimensionData dimensionData, LevelDat levelDat) {
+    public static synchronized void writeLevelDat(String pathName, DimensionData dimensionData, LevelDat levelDat) {
         Path path = Path.of(pathName);
         String levelDatName = "level.dat";
         if (dimensionData.getDimensionId() != 0) {
             levelDatName = "level_Dim%s.dat".formatted(dimensionData.getDimensionId());
         }
-        var levelDatNow = path.resolve(levelDatName).toFile();
-        try (var output = new FileOutputStream(levelDatNow);
-             var nbtOutputStream = NbtUtils.createWriterLE(output)) {
-            if (levelDatNow.exists()) {
-                Files.copy(path.resolve(levelDatName), path.resolve(levelDatName + "_old"), StandardCopyOption.REPLACE_EXISTING);
-            } else {
-                levelDatNow.createNewFile();
+        Path levelDatPath = path.resolve(levelDatName);
+        Path backupPath = path.resolve(levelDatName + "_old");
+        Path tempPath = path.resolve(levelDatName + ".tmp");
+        try {
+            if (Files.isRegularFile(levelDatPath) && Files.size(levelDatPath) > levelDatMagic.length) {
+                Files.copy(levelDatPath, backupPath, StandardCopyOption.REPLACE_EXISTING);
             }
-            output.write(levelDatMagic);//magic number
-            nbtOutputStream.writeTag(createWorldDataNBT(levelDat));
+
+            var buffer = new ByteArrayOutputStream();
+            try (var nbtOutputStream = NbtUtils.createWriterLE(buffer)) {
+                nbtOutputStream.writeTag(createWorldDataNBT(levelDat));
+            }
+
+            try (var output = new FileOutputStream(tempPath.toFile())) {
+                output.write(levelDatMagic);
+                buffer.writeTo(output);
+                output.flush();
+                output.getFD().sync();
+            }
+            try {
+                Files.move(tempPath, levelDatPath, StandardCopyOption.ATOMIC_MOVE);
+            } catch (AtomicMoveNotSupportedException e) {
+                Files.move(tempPath, levelDatPath, StandardCopyOption.REPLACE_EXISTING);
+            }
         } catch (IOException e) {
             throw new UncheckedIOException("Failed to write level dat: ", e);
         }
@@ -199,7 +215,7 @@ public class LevelDBProvider implements LevelProvider {
             if (Server.getInstance() != null && Server.getInstance().getSettings().chunkSettings().convertBDSChunks() && chunk.isPopulated()) {
                 CompoundTag extra = chunk.getExtraData();
                 if (extra == null || extra.isEmpty()) {
-                    chunk = ChunkConversion.convert(chunk);
+                    ChunkConversion.convert(chunk);
                 }
             }
             putChunk(index, chunk);
@@ -234,11 +250,11 @@ public class LevelDBProvider implements LevelProvider {
             Block block = level.getBlock(info.x, info.y, info.z, info.layer);
             if (block.getId().equals(info.id)) {
                 chunk.getBlockUpdateScheduler().add(new BlockUpdateEntry(
-                        new Vector3(info.x, info.y, info.z),
-                        block,
-                        level.getCurrentTick() + Math.max(info.delay, 1),
-                        info.priority,
-                        info.checkBlockWhenUpdate
+                    new Vector3(info.x, info.y, info.z),
+                    block,
+                    level.getCurrentTick() + Math.max(info.delay, 1),
+                    info.priority,
+                    info.checkBlockWhenUpdate
                 ));
             }
         }
@@ -380,6 +396,7 @@ public class LevelDBProvider implements LevelProvider {
                         if (blockEntity instanceof BlockEntityMobSpawner spawner && !spawner.hasSpawnEntityType()) continue;
                         tagList.add(blockEntitySpawnable.getSpawnCompound());
                         //Adding NBT to a chunk pack does not show some block entities, and you have to send block entity packets to the player
+                        assert level != null;
                         level.addChunkPacket(blockEntitySpawnable.getChunkX(), blockEntitySpawnable.getChunkZ(), blockEntitySpawnable.getSpawnPacket());
                     }
                 }
@@ -832,95 +849,95 @@ public class LevelDBProvider implements LevelProvider {
             LevelDat.Experiments experimentData = new LevelDat.Experiments(experimentMap);
 
             LevelDat.LevelDatBuilder levelDatBuilder = LevelDat.builder()
-                    .biomeOverride(d.getString("BiomeOverride"))
-                    .centerMapsToOrigin(this.getBoolean(d, "CenterMapsToOrigin"))
-                    .confirmedPlatformLockedContent(this.getBoolean(d, "ConfirmedPlatformLockedContent"))
-                    .difficulty(d.getInt("Difficulty"))
-                    .flatWorldLayers(d.getString("FlatWorldLayers"))
-                    .forceGameType(this.getBoolean(d, "ForceGameType"))
-                    .gameType(GameType.from(d.getInt("GameType")))
-                    .generator(d.getInt("Generator"))
-                    .inventoryVersion(d.getString("InventoryVersion"))
-                    .LANBroadcast(this.getBoolean(d, "LANBroadcast"))
-                    .LANBroadcastIntent(this.getBoolean(d, "LANBroadcastIntent"))
-                    .lastPlayed(d.getLong("LastPlayed"))
-                    .name(d.getString("LevelName"))
-                    .limitedWorldOriginPoint(new BlockVector3(d.getInt("LimitedWorldOriginX"), d.getInt("LimitedWorldOriginY"), d.getInt("LimitedWorldOriginZ")))
-                    .minimumCompatibleClientVersion(SemVersion.from(d.getList("MinimumCompatibleClientVersion", NbtType.INT)))
-                    .multiplayerGame(this.getBoolean(d, "MultiplayerGame"))
-                    .multiplayerGameIntent(this.getBoolean(d, "MultiplayerGameIntent"))
-                    .netherScale(d.getInt("NetherScale"))
-                    .networkVersion(d.getInt("NetworkVersion"))
-                    .platform(d.getInt("Platform"))
-                    .platformBroadcastIntent(d.getInt("PlatformBroadcastIntent"))
-                    .randomSeed(d.getLong("RandomSeed"))
-                    .spawnV1Villagers(this.getBoolean(d, "SpawnV1Villagers"))
-                    .spawnPoint(new BlockVector3(d.getInt("SpawnX"), d.getInt("SpawnY"), d.getInt("SpawnZ")))
-                    .storageVersion(d.getInt("StorageVersion"))
-                    .time(d.getLong("Time"))
-                    .worldVersion(d.getInt("WorldVersion"))
-                    .XBLBroadcastIntent(d.getInt("XBLBroadcastIntent"))
-                    .gameRules(gameRules)
-                    .abilities(LevelDat.Abilities.builder()
-                            .attackMobs(abilities.getBoolean("attackmobs"))
-                            .attackPlayers(abilities.getBoolean("attackplayers"))
-                            .build(abilities.getBoolean("build"))
-                            .doorsAndSwitches(abilities.getBoolean("doorsandswitches"))
-                            .flySpeed(abilities.getFloat("flySpeed"))
-                            .flying(abilities.getBoolean("flying"))
-                            .instaBuild(abilities.getBoolean("instabuild"))
-                            .invulnerable(abilities.getBoolean("invulnerable"))
-                            .lightning(abilities.getBoolean("lightning"))
-                            .mayFly(abilities.getBoolean("mayfly"))
-                            .mine(abilities.getBoolean("mine"))
-                            .op(abilities.getBoolean("op"))
-                            .openContainers(abilities.getBoolean("opencontainers"))
-                            .teleport(abilities.getBoolean("teleport"))
-                            .walkSpeed(abilities.getFloat("walkSpeed"))
-                            .build())
-                    .baseGameVersion(d.getString("baseGameVersion"))
-                    .bonusChestEnabled(this.getBoolean(d, "bonusChestEnabled"))
-                    .bonusChestSpawned(this.getBoolean(d, "bonusChestSpawned"))
-                    .cheatsEnabled(this.getBoolean(d, "cheatsEnabled"))
-                    .commandsEnabled(this.getBoolean(d, "commandsEnabled"))
-                    .currentTick(d.getLong("currentTick"))
-                    .daylightCycle(d.getInt("daylightCycle"))
-                    .editorWorldType(d.getInt("editorWorldType"))
-                    .eduOffer(d.getInt("eduOffer"))
-                    .educationFeaturesEnabled(this.getBoolean(d, "educationFeaturesEnabled"))
-                    .experiments(experimentData)
-                    .hasBeenLoadedInCreative(this.getBoolean(d, "hasBeenLoadedInCreative"))
-                    .hasLockedBehaviorPack(this.getBoolean(d, "hasLockedBehaviorPack"))
-                    .hasLockedResourcePack(this.getBoolean(d, "hasLockedResourcePack"))
-                    .immutableWorld(this.getBoolean(d, "immutableWorld"))
-                    .isCreatedInEditor(this.getBoolean(d, "isCreatedInEditor"))
-                    .isExportedFromEditor(this.getBoolean(d, "isExportedFromEditor"))
-                    .isFromLockedTemplate(this.getBoolean(d, "isFromLockedTemplate"))
-                    .isFromWorldTemplate(this.getBoolean(d, "isFromWorldTemplate"))
-                    .isRandomSeedAllowed(this.getBoolean(d, "isRandomSeedAllowed"))
-                    .isSingleUseWorld(this.getBoolean(d, "isSingleUseWorld"))
-                    .isWorldTemplateOptionLocked(this.getBoolean(d, "isWorldTemplateOptionLocked"))
-                    .lastOpenedWithVersion(SemVersion.from(d.getList("lastOpenedWithVersion", NbtType.INT)))
-                    .lightningLevel(d.getFloat("lightningLevel"))
-                    .lightningTime(d.getInt("lightningTime"))
-                    .limitedWorldDepth(d.getInt("limitedWorldDepth"))
-                    .limitedWorldWidth(d.getInt("limitedWorldWidth"))
-                    .permissionsLevel(d.getInt("permissionsLevel"))
-                    .playerPermissionsLevel(d.getInt("playerPermissionsLevel"))
-                    .playersSleepingPercentage(d.getInt("playersSleepingPercentage"))
-                    .prid(d.getString("prid"))
-                    .rainLevel(d.getFloat("rainLevel"))
-                    .rainTime(d.getInt("rainTime"))
-                    .randomTickSpeed(d.getInt("randomTickSpeed"))
-                    .recipesUnlock(this.getBoolean(d, "recipesUnlock"))
-                    .requiresCopiedPackRemovalCheck(this.getBoolean(d, "requiresCopiedPackRemovalCheck"))
-                    .serverChunkTickRange(d.getInt("serverChunkTickRange"))
-                    .spawnMobs(this.getBoolean(d, "spawnMobs"))
-                    .startWithMapEnabled(this.getBoolean(d, "startWithMapEnabled"))
-                    .texturePacksRequired(this.getBoolean(d, "texturePacksRequired"))
-                    .useMsaGamertagsOnly(this.getBoolean(d, "useMsaGamertagsOnly"))
-                    .worldStartCount(d.getLong("worldStartCount"))
-                    .worldPolicies(LevelDat.WorldPolicies.builder().build());
+                .biomeOverride(d.getString("BiomeOverride"))
+                .centerMapsToOrigin(this.getBoolean(d, "CenterMapsToOrigin"))
+                .confirmedPlatformLockedContent(this.getBoolean(d, "ConfirmedPlatformLockedContent"))
+                .difficulty(d.getInt("Difficulty"))
+                .flatWorldLayers(d.getString("FlatWorldLayers"))
+                .forceGameType(this.getBoolean(d, "ForceGameType"))
+                .gameType(GameType.from(d.getInt("GameType")))
+                .generator(d.getInt("Generator"))
+                .inventoryVersion(d.getString("InventoryVersion"))
+                .LANBroadcast(this.getBoolean(d, "LANBroadcast"))
+                .LANBroadcastIntent(this.getBoolean(d, "LANBroadcastIntent"))
+                .lastPlayed(d.getLong("LastPlayed"))
+                .name(d.getString("LevelName"))
+                .limitedWorldOriginPoint(new BlockVector3(d.getInt("LimitedWorldOriginX"), d.getInt("LimitedWorldOriginY"), d.getInt("LimitedWorldOriginZ")))
+                .minimumCompatibleClientVersion(SemVersion.from(d.getList("MinimumCompatibleClientVersion", NbtType.INT)))
+                .multiplayerGame(this.getBoolean(d, "MultiplayerGame"))
+                .multiplayerGameIntent(this.getBoolean(d, "MultiplayerGameIntent"))
+                .netherScale(d.getInt("NetherScale"))
+                .networkVersion(d.getInt("NetworkVersion"))
+                .platform(d.getInt("Platform"))
+                .platformBroadcastIntent(d.getInt("PlatformBroadcastIntent"))
+                .randomSeed(d.getLong("RandomSeed"))
+                .spawnV1Villagers(this.getBoolean(d, "SpawnV1Villagers"))
+                .spawnPoint(new BlockVector3(d.getInt("SpawnX"), d.getInt("SpawnY"), d.getInt("SpawnZ")))
+                .storageVersion(d.getInt("StorageVersion"))
+                .time(d.getLong("Time"))
+                .worldVersion(d.getInt("WorldVersion"))
+                .XBLBroadcastIntent(d.getInt("XBLBroadcastIntent"))
+                .gameRules(gameRules)
+                .abilities(LevelDat.Abilities.builder()
+                    .attackMobs(abilities.getBoolean("attackmobs"))
+                    .attackPlayers(abilities.getBoolean("attackplayers"))
+                    .build(abilities.getBoolean("build"))
+                    .doorsAndSwitches(abilities.getBoolean("doorsandswitches"))
+                    .flySpeed(abilities.getFloat("flySpeed"))
+                    .flying(abilities.getBoolean("flying"))
+                    .instaBuild(abilities.getBoolean("instabuild"))
+                    .invulnerable(abilities.getBoolean("invulnerable"))
+                    .lightning(abilities.getBoolean("lightning"))
+                    .mayFly(abilities.getBoolean("mayfly"))
+                    .mine(abilities.getBoolean("mine"))
+                    .op(abilities.getBoolean("op"))
+                    .openContainers(abilities.getBoolean("opencontainers"))
+                    .teleport(abilities.getBoolean("teleport"))
+                    .walkSpeed(abilities.getFloat("walkSpeed"))
+                    .build())
+                .baseGameVersion(d.getString("baseGameVersion"))
+                .bonusChestEnabled(this.getBoolean(d, "bonusChestEnabled"))
+                .bonusChestSpawned(this.getBoolean(d, "bonusChestSpawned"))
+                .cheatsEnabled(this.getBoolean(d, "cheatsEnabled"))
+                .commandsEnabled(this.getBoolean(d, "commandsEnabled"))
+                .currentTick(d.getLong("currentTick"))
+                .daylightCycle(d.getInt("daylightCycle"))
+                .editorWorldType(d.getInt("editorWorldType"))
+                .eduOffer(d.getInt("eduOffer"))
+                .educationFeaturesEnabled(this.getBoolean(d, "educationFeaturesEnabled"))
+                .experiments(experimentData)
+                .hasBeenLoadedInCreative(this.getBoolean(d, "hasBeenLoadedInCreative"))
+                .hasLockedBehaviorPack(this.getBoolean(d, "hasLockedBehaviorPack"))
+                .hasLockedResourcePack(this.getBoolean(d, "hasLockedResourcePack"))
+                .immutableWorld(this.getBoolean(d, "immutableWorld"))
+                .isCreatedInEditor(this.getBoolean(d, "isCreatedInEditor"))
+                .isExportedFromEditor(this.getBoolean(d, "isExportedFromEditor"))
+                .isFromLockedTemplate(this.getBoolean(d, "isFromLockedTemplate"))
+                .isFromWorldTemplate(this.getBoolean(d, "isFromWorldTemplate"))
+                .isRandomSeedAllowed(this.getBoolean(d, "isRandomSeedAllowed"))
+                .isSingleUseWorld(this.getBoolean(d, "isSingleUseWorld"))
+                .isWorldTemplateOptionLocked(this.getBoolean(d, "isWorldTemplateOptionLocked"))
+                .lastOpenedWithVersion(SemVersion.from(d.getList("lastOpenedWithVersion", NbtType.INT)))
+                .lightningLevel(d.getFloat("lightningLevel"))
+                .lightningTime(d.getInt("lightningTime"))
+                .limitedWorldDepth(d.getInt("limitedWorldDepth"))
+                .limitedWorldWidth(d.getInt("limitedWorldWidth"))
+                .permissionsLevel(d.getInt("permissionsLevel"))
+                .playerPermissionsLevel(d.getInt("playerPermissionsLevel"))
+                .playersSleepingPercentage(d.getInt("playersSleepingPercentage"))
+                .prid(d.getString("prid"))
+                .rainLevel(d.getFloat("rainLevel"))
+                .rainTime(d.getInt("rainTime"))
+                .randomTickSpeed(d.getInt("randomTickSpeed"))
+                .recipesUnlock(this.getBoolean(d, "recipesUnlock"))
+                .requiresCopiedPackRemovalCheck(this.getBoolean(d, "requiresCopiedPackRemovalCheck"))
+                .serverChunkTickRange(d.getInt("serverChunkTickRange"))
+                .spawnMobs(this.getBoolean(d, "spawnMobs"))
+                .startWithMapEnabled(this.getBoolean(d, "startWithMapEnabled"))
+                .texturePacksRequired(this.getBoolean(d, "texturePacksRequired"))
+                .useMsaGamertagsOnly(this.getBoolean(d, "useMsaGamertagsOnly"))
+                .worldStartCount(d.getLong("worldStartCount"))
+                .worldPolicies(LevelDat.WorldPolicies.builder().build());
             if (d.containsKey("raining")) {
                 levelDatBuilder.raining(this.getBoolean(d, "raining"));//PNX Custom field
             }

@@ -2,10 +2,12 @@ package org.powernukkitx.registry;
 
 import org.cloudburstmc.protocol.bedrock.data.payload.crafting.RecipeUnlockingContext;
 import org.cloudburstmc.protocol.bedrock.data.payload.crafting.RecipeUnlockingRequirement;
+import org.powernukkitx.Player;
 import org.powernukkitx.Server;
 import org.powernukkitx.block.BlockState;
 import org.powernukkitx.item.Item;
 import org.powernukkitx.item.ItemID;
+import org.powernukkitx.level.GameRule;
 import org.powernukkitx.recipe.*;
 import org.powernukkitx.recipe.descriptor.DefaultDescriptor;
 import org.powernukkitx.recipe.descriptor.ItemDescriptor;
@@ -355,9 +357,19 @@ public class RecipeRegistry implements IRegistry<String, Recipe, Recipe> {
 
     public Set<ModProcessRecipe> getModProcessRecipeMap() {
         HashSet<ModProcessRecipe> result = new HashSet<>();
-        for (var s : recipeMaps.get(RecipeType.MOD_PROCESS).values()) {
-            result.addAll(Collections2.transform(s, d -> (ModProcessRecipe) d));
+        Int2ObjectArrayMap<Set<Recipe>> recipes = recipeMaps.get(RecipeType.MOD_PROCESS);
+
+        if (recipes != null) {
+            for (var recipeSet : recipes.values()) {
+                result.addAll(
+                    Collections2.transform(
+                        recipeSet,
+                        recipe -> (ModProcessRecipe) recipe
+                    )
+                );
+            }
         }
+
         return result;
     }
 
@@ -373,6 +385,70 @@ public class RecipeRegistry implements IRegistry<String, Recipe, Recipe> {
 
     public CraftingDataPacket getCraftingPacket() {
         return PACKET;
+    }
+
+    /**
+     * Sends the definition of a hidden recipe to one player.
+     *
+     * The packet does not clear the recipes already known by the client.
+     */
+    public void sendHiddenRecipeDefinition(
+        Player player,
+        Recipe recipe
+    ) {
+        if (
+            !(recipe instanceof CraftingRecipe craftingRecipe)
+                || !craftingRecipe.isHiddenUntilUnlocked()
+        ) {
+            return;
+        }
+
+        CraftingDataPacket packet = new CraftingDataPacket();
+        packet.setClearRecipes(false);
+
+        addNetworkRecipeToPacket(packet, recipe);
+
+        player.sendPacketImmediately(packet);
+    }
+
+    /**
+     * Sends every hidden recipe already available to a player.
+     *
+     * Used after sending the global recipe packet, notably during login.
+     */
+    public void sendAvailableHiddenRecipeDefinitions(Player player) {
+        CraftingDataPacket packet = new CraftingDataPacket();
+        packet.setClearRecipes(false);
+
+        boolean discoveryEnabled = player.getLevel()
+            .getGameRules()
+            .getBoolean(GameRule.RECIPES_UNLOCK);
+
+        boolean hasRecipe = false;
+
+        for (Recipe recipe : this.networkIdRecipeMap.values()) {
+            if (
+                !(recipe instanceof CraftingRecipe craftingRecipe)
+                    || !craftingRecipe.isHiddenUntilUnlocked()
+            ) {
+                continue;
+            }
+
+            if (
+                discoveryEnabled
+                    && !player.getRecipeBook()
+                    .isUnlocked(recipe.getRecipeId())
+            ) {
+                continue;
+            }
+
+            addNetworkRecipeToPacket(packet, recipe);
+            hasRecipe = true;
+        }
+
+        if (hasRecipe) {
+            player.sendPacketImmediately(packet);
+        }
     }
 
     public int getRecipeCount() {
@@ -605,18 +681,15 @@ public class RecipeRegistry implements IRegistry<String, Recipe, Recipe> {
     public void rebuildPacket() {
         final CraftingDataPacket pk = new CraftingDataPacket();
 
-        for (Recipe netIdRecipe : this.getNetworkIdRecipeMap().values()) {
-            switch (netIdRecipe) {
-                case UserDataShapelessRecipe recipe -> pk.getUserDataShapelessRecipes().add(recipe.toNetwork());
-                case ShapelessRecipe recipe -> pk.getShapelessRecipes().add(recipe.toNetwork());
-                case StonecutterRecipe recipe -> pk.getShapelessRecipes().add(recipe.toNetwork());
-                case ShapedRecipe recipe -> pk.getShapedRecipes().add(recipe.toNetwork());
-                case MultiRecipe recipe -> pk.getMultiRecipes().add(recipe.toNetwork());
-                case SmithingTransformRecipe recipe -> pk.getSmithingTransformRecipes().add(recipe.toNetwork());
-                case SmithingTrimRecipe recipe -> pk.getSmithingTrimRecipes().add(recipe.toNetwork());
-                default -> {
-                }
+        for (Recipe recipe : this.getNetworkIdRecipeMap().values()) {
+            if (
+                recipe instanceof CraftingRecipe craftingRecipe
+                    && craftingRecipe.isHiddenUntilUnlocked()
+            ) {
+                continue;
             }
+
+            addNetworkRecipeToPacket(pk, recipe);
         }
 
         for (FurnaceRecipe recipe : getFurnaceRecipeMap()) {
@@ -643,6 +716,51 @@ public class RecipeRegistry implements IRegistry<String, Recipe, Recipe> {
 
         pk.setClearRecipes(true);
         PACKET = pk;
+    }
+
+    private static void addNetworkRecipeToPacket(
+        CraftingDataPacket packet,
+        Recipe recipe
+    ) {
+        switch (recipe) {
+            case UserDataShapelessRecipe userDataRecipe ->
+                packet.getUserDataShapelessRecipes().add(
+                    userDataRecipe.toNetwork()
+                );
+
+            case ShapelessRecipe shapelessRecipe ->
+                packet.getShapelessRecipes().add(
+                    shapelessRecipe.toNetwork()
+                );
+
+            case StonecutterRecipe stonecutterRecipe ->
+                packet.getShapelessRecipes().add(
+                    stonecutterRecipe.toNetwork()
+                );
+
+            case ShapedRecipe shapedRecipe ->
+                packet.getShapedRecipes().add(
+                    shapedRecipe.toNetwork()
+                );
+
+            case MultiRecipe multiRecipe ->
+                packet.getMultiRecipes().add(
+                    multiRecipe.toNetwork()
+                );
+
+            case SmithingTransformRecipe smithingRecipe ->
+                packet.getSmithingTransformRecipes().add(
+                    smithingRecipe.toNetwork()
+                );
+
+            case SmithingTrimRecipe smithingTrimRecipe ->
+                packet.getSmithingTrimRecipes().add(
+                    smithingTrimRecipe.toNetwork()
+                );
+
+            default -> {
+            }
+        }
     }
 
     @SneakyThrows

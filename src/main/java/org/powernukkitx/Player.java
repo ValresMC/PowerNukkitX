@@ -236,6 +236,7 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
     private static final byte PLAYER_FLAG_SLEEP = 0x2;
     private static final long POST_TELEPORT_GRACE_MS = 1000L;
     private static final int BLOCK_BREAK_PROGRESS_SCALE = 65535;
+    private static final double BLOCK_BREAK_SPEED_EPSILON = 0.0001;
     // The level-event speed is consumed by the Bedrock client's fixed-rate game tick, not the configurable server loop.
     private static final int BEDROCK_CLIENT_TICKS_PER_SECOND = 20;
     /// static fields
@@ -261,7 +262,7 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
     public long lastSkinChange;
     protected long breakingBlockTime = 0;
     protected double blockBreakProgress = 0;
-    protected int lastSentBreakTick = 0;
+    protected double blockBreakSpeed = 0;
     protected final BedrockServerSession session;
     protected final InetSocketAddress rawSocketAddress;
     protected final Map<UUID, Player> hiddenPlayers = new HashMap<>();
@@ -514,44 +515,30 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
             } else miningTimeRequired = this.breakingBlock.calculateBreakTime(this.inventory.getItemInMainHand(), this);
 
             if (miningTimeRequired > 0) {
-                Item hand = this.inventory.getItemInMainHand();
-                boolean hasCustomDigger = hand != null && !hand.isNull() && hand.getCustomItemComponent("minecraft:digger") != null;
-                boolean useServerSideBreakVisuals = this.breakingBlock instanceof CustomBlock || hasCustomDigger;
+                double updatedBreakSpeed = calculateBlockBreakProgressPerTick(miningTimeRequired);
 
-                int breakTick = Math.max(1, (int) Math.ceil(miningTimeRequired * 20));
-
-                if (breakTick != this.lastSentBreakTick) {
-                    if (useServerSideBreakVisuals) {
-                        final LevelEventPacket pk = new LevelEventPacket();
-                        pk.setType(LevelEvent.BLOCK_UPDATE_BREAK);
-                        pk.setPosition(Vector3f.from(this.breakingBlock.x, this.breakingBlock.y, this.breakingBlock.z));
-                        pk.setData(calculateNetworkBlockBreakSpeed(miningTimeRequired));
-                        this.getLevel().addChunkPacket(this.breakingBlock.getFloorX() >> 4, this.breakingBlock.getFloorZ() >> 4, pk);
-                    }
-                    this.lastSentBreakTick = breakTick;
+                if (Math.abs(updatedBreakSpeed - this.blockBreakSpeed) > BLOCK_BREAK_SPEED_EPSILON) {
+                    final LevelEventPacket pk = new LevelEventPacket();
+                    pk.setType(LevelEvent.BLOCK_UPDATE_BREAK);
+                    pk.setPosition(Vector3f.from(this.breakingBlock.x, this.breakingBlock.y, this.breakingBlock.z));
+                    pk.setData(calculateNetworkBlockBreakSpeed(miningTimeRequired));
+                    this.broadcastBlockBreakEvent(this.breakingBlock, pk);
+                    this.blockBreakSpeed = updatedBreakSpeed;
                 }
 
                 if (face != null && !this.server.getSettings().miscSettings().overrideServerAuthBlockBreaking()) {
                     this.level.addParticle(new BreakBlockParticle(pos.add(0.5, 0.5, 0.5), this.breakingBlock, face));
                 }
 
-                long timeDiff = time - breakingBlockTime;
-                blockBreakProgress += timeDiff / (breakTick * 50.0);
+                this.blockBreakProgress += this.blockBreakSpeed;
 
-                if (blockBreakProgress >= 1.0) {
-                    if (useServerSideBreakVisuals) {
-                        final LevelEventPacket stopPk = new LevelEventPacket();
-                        stopPk.setType(LevelEvent.BLOCK_STOP_BREAK);
-                        stopPk.setPosition(pos.toNetwork());
-                        this.getLevel().addChunkPacket(pos.getFloorX() >> 4, pos.getFloorZ() >> 4, stopPk);
-                    }
+                if (this.blockBreakProgress >= 1.0) {
+                    final LevelEventPacket stopPk = new LevelEventPacket();
+                    stopPk.setType(LevelEvent.BLOCK_STOP_BREAK);
+                    stopPk.setPosition(pos.toNetwork());
+                    this.broadcastBlockBreakEvent(pos, stopPk);
 
-                    this.blockBreakProgress = 0;
-                    this.breakingBlock = null;
-                    this.breakingBlockFace = null;
-                    this.lastSentBreakTick = 0;
-
-                    this.onBlockBreakComplete(pos.asBlockVector3(), face);
+                    this.resetBlockBreak();
                     return;
                 }
 
@@ -567,8 +554,8 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
         if (this.breakingBlock != null
             && this.breakingBlock.getFloorX() == blockPos.x
             && this.breakingBlock.getFloorY() == blockPos.y
-            && this.breakingBlock.getFloorZ() == blockPos.z
-            && this.breakingBlockFace == face) {
+            && this.breakingBlock.getFloorZ() == blockPos.z) {
+            this.breakingBlockFace = face;
             return;
         }
 
@@ -623,6 +610,7 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
 
             Item hand = this.inventory.getItemInMainHand();
             double miningTimeRequired = target instanceof CustomBlock customBlock ? customBlock.breakTime(hand, this) : target.calculateBreakTime(hand, this);
+            this.blockBreakSpeed = calculateBlockBreakProgressPerTick(miningTimeRequired);
             int breakSpeed = calculateNetworkBlockBreakSpeed(miningTimeRequired);
 
             if (breakSpeed > 0) {
@@ -630,8 +618,7 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
                 pk.setType(LevelEvent.BLOCK_START_BREAK);
                 pk.setPosition(pos.toNetwork());
                 pk.setData(breakSpeed);
-                this.getLevel().addChunkPacket(pos.getFloorX() >> 4, pos.getFloorZ() >> 4, pk);
-                this.lastSentBreakTick = breakTime;
+                this.broadcastBlockBreakEvent(pos, pk);
 
                 if (this.getLevel().isAntiXrayEnabled() && this.getLevel().getAntiXraySystem().isPreDeObfuscate()) {
                     this.getLevel().getAntiXraySystem().deObfuscateBlock(this, face, target);
@@ -646,20 +633,39 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
     }
 
     static int calculateNetworkBlockBreakSpeed(double miningTimeRequired) {
+        double progressPerTick = calculateBlockBreakProgressPerTick(miningTimeRequired);
+        if (progressPerTick <= 0) {
+            return 0;
+        }
+
+        return (int) Math.min(BLOCK_BREAK_PROGRESS_SCALE,
+            Math.max(1, BLOCK_BREAK_PROGRESS_SCALE * progressPerTick));
+    }
+
+    private static double calculateBlockBreakProgressPerTick(double miningTimeRequired) {
         if (!Double.isFinite(miningTimeRequired) || miningTimeRequired <= 0) {
             return 0;
         }
 
-        double progressPerClientTick = 1 / (miningTimeRequired * BEDROCK_CLIENT_TICKS_PER_SECOND);
-        return (int) Math.min(BLOCK_BREAK_PROGRESS_SCALE,
-            Math.max(1, BLOCK_BREAK_PROGRESS_SCALE * progressPerClientTick));
+        return 1 / (miningTimeRequired * BEDROCK_CLIENT_TICKS_PER_SECOND);
+    }
+
+    private void broadcastBlockBreakEvent(Vector3 pos, LevelEventPacket packet) {
+        this.getLevel().addChunkPacket(pos.getFloorX() >> 4, pos.getFloorZ() >> 4, packet);
+    }
+
+    private boolean isBreakingBlockAt(BlockVector3 blockPos) {
+        return this.breakingBlock != null
+            && this.breakingBlock.getFloorX() == blockPos.x
+            && this.breakingBlock.getFloorY() == blockPos.y
+            && this.breakingBlock.getFloorZ() == blockPos.z;
     }
 
     protected void resetBlockBreak() {
         this.blockBreakProgress = 0;
+        this.blockBreakSpeed = 0;
         this.breakingBlock = null;
         this.breakingBlockFace = null;
-        this.lastSentBreakTick = 0;
     }
 
     public void onBlockBreakAbort(Vector3 pos) {
@@ -667,7 +673,7 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
             final LevelEventPacket pk = new LevelEventPacket();
             pk.setType(LevelEvent.BLOCK_STOP_BREAK);
             pk.setPosition(pos.toNetwork());
-            this.getLevel().addChunkPacket(pos.getFloorX() >> 4, pos.getFloorZ() >> 4, pk);
+            this.broadcastBlockBreakEvent(pos, pk);
         }
         resetBlockBreak();
     }
@@ -677,6 +683,16 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
             return;
         }
         Item handItem = this.getInventory().getItemInMainHand();
+        boolean tracked = this.isBreakingBlockAt(blockPos);
+
+        if (tracked) {
+            Vector3 breakPosition = blockPos.asVector3();
+            final LevelEventPacket stopPk = new LevelEventPacket();
+            stopPk.setType(LevelEvent.BLOCK_STOP_BREAK);
+            stopPk.setPosition(breakPosition.toNetwork());
+            this.broadcastBlockBreakEvent(breakPosition, stopPk);
+        }
+
         Item clone = handItem.clone();
 
         boolean canInteract = this.canInteract(blockPos.add(0.5, 0.5, 0.5), this.isCreative() ? 13 : 7);

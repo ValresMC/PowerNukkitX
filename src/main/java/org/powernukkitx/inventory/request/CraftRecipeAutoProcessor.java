@@ -39,7 +39,14 @@ public class CraftRecipeAutoProcessor implements ItemStackRequestActionProcessor
                     action.getRecipeNetId().getRawId(), Registries.RECIPE.isEnabled() ? "enabled" : "disabled");
             return context.error();
         }
-
+        if (!player.getRecipeBook().canCraft(recipe)) {
+            log.debug(
+                "Rejecting locked auto craft recipe {} for player {}",
+                recipe.getRecipeId(),
+                player.getName()
+            );
+            return context.error();
+        }
         List<ItemDescriptor> ingredients = recipe.getIngredients();
         if (ingredients.isEmpty()) {
             log.debug("Rejecting auto craft request for recipe {} which carries no server side ingredients", recipe.getRecipeId());

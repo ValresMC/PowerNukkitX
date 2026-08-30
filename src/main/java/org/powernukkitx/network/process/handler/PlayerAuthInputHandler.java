@@ -243,11 +243,6 @@ public class PlayerAuthInputHandler implements PacketHandler<PlayerAuthInputPack
                 Vector3i blockPos = action.getBlockPosition();
                 BlockFace blockFace = BlockFace.fromIndex(action.getFacing());
                 PlayerHandle playerHandle = new PlayerHandle(player);
-                if (playerHandle.getLastBlockAction() != null && playerHandle.getLastBlockAction().getPlayerActionType() == PlayerActionType.PREDICT_DESTROY_BLOCK &&
-                        action.getPlayerActionType() == PlayerActionType.CONTINUE_DESTROY_BLOCK) {
-                    playerHandle.onBlockBreakStart(Vector3.fromNetwork(blockPos.toFloat()), blockFace);
-                }
-
                 PlayerBlockActionData lastAction = playerHandle.getLastBlockAction();
                 BlockVector3 lastBreakPos = lastAction == null ? null : BlockVector3.fromNetwork(lastAction.getBlockPosition());
                 if (lastBreakPos != null && (lastBreakPos.getX() != blockPos.getX() || lastBreakPos.getY() != blockPos.getY() || lastBreakPos.getZ() != blockPos.getZ())) {
@@ -260,6 +255,10 @@ public class PlayerAuthInputHandler implements PacketHandler<PlayerAuthInputPack
                         playerHandle.onBlockBreakAbort(lastBreakPos.asVector3());
                     }
                     player.onBlockBreakStart(Vector3.fromNetwork(blockPos.toFloat()), blockFace);
+                } else if (lastAction != null
+                        && lastAction.getPlayerActionType() == PlayerActionType.PREDICT_DESTROY_BLOCK
+                        && action.getPlayerActionType() == PlayerActionType.CONTINUE_DESTROY_BLOCK) {
+                    playerHandle.onBlockBreakStart(Vector3.fromNetwork(blockPos.toFloat()), blockFace);
                 }
 
                 switch (action.getPlayerActionType()) {

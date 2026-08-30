@@ -207,6 +207,14 @@ public class CraftRecipeActionProcessor implements ItemStackRequestActionProcess
                 action.getRecipeNetId().getRawId(), Registries.RECIPE.isEnabled() ? "enabled" : "disabled");
             return context.error();
         }
+        if (!player.getRecipeBook().canCraft(recipe)) {
+            log.debug(
+                "Rejecting locked recipe {} for player {}",
+                recipe.getRecipeId(),
+                player.getName()
+            );
+            return context.error();
+        }
         Input input = craft.getInput();
         Item[][] data = input.getData();
         ArrayList<Item> items = new ArrayList<>();

@@ -2525,7 +2525,13 @@ public class Server {
      * @param player the player
      */
     public void sendRecipeList(Player player) {
-        player.sendPacketImmediately(Registries.RECIPE.getCraftingPacket());
+        player.sendPacketImmediately(
+            Registries.RECIPE.getCraftingPacket()
+        );
+
+        Registries.RECIPE.sendAvailableHiddenRecipeDefinitions(
+            player
+        );
     }
 
     /**

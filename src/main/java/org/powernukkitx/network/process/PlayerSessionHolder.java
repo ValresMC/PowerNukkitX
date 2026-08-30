@@ -316,7 +316,13 @@ public class PlayerSessionHolder {
         this.session.sendPacketImmediately(Registries.TRIM.buildPacket());
 
         this.player.syncInventory();
-        this.player.sendPacketImmediately(Registries.RECIPE.getCraftingPacket());
+        this.player.sendPacketImmediately(
+            Registries.RECIPE.getCraftingPacket()
+        );
+
+        Registries.RECIPE.sendAvailableHiddenRecipeDefinitions(
+            this.player
+        );
 
         this.player.setCanClimb(true);
         this.player.setMovementSpeed(this.player.getMovementSpeed());
