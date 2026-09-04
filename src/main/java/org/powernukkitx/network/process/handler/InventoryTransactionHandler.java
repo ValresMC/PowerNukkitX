@@ -452,6 +452,15 @@ public class InventoryTransactionHandler
             } else {
                 player.getInventory().sendContents(player);
             }
+        } else if (type.equals(ItemUseOnActorActionType.ATTACK)) {
+            if (target instanceof Player && !player.getAdventureSettings().get(AdventureSettings.Type.ATTACK_PLAYERS)
+                    || !(target instanceof Player) && !player.getAdventureSettings().get(AdventureSettings.Type.ATTACK_MOBS))
+                return;
+            if (target.runtimeId() == player.runtimeId()) {
+                PlayerHackDetectedEvent event = new PlayerHackDetectedEvent(player, PlayerHackDetectedEvent.HackType.INVALID_PVP);
+                player.getServer().getPluginManager().callEvent(event);
+            }
+        }
 
             return;
         }
