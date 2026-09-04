@@ -1,5 +1,6 @@
 package org.powernukkitx.level.generator.object;
 
+import org.cloudburstmc.math.vector.Vector3i;
 import org.powernukkitx.Player;
 import org.powernukkitx.block.Block;
 import org.powernukkitx.block.BlockAir;
@@ -333,9 +334,13 @@ public class BlockManager {
                 }
                 UpdateSubChunkBlocksPacket batch = batchs.computeIfAbsent(new SubChunkEntry(b.getChunkX() << 4, (b.getFloorY() >> 4) << 4, b.getChunkZ() << 4), s -> {
                     final UpdateSubChunkBlocksPacket packet = new UpdateSubChunkBlocksPacket();
-                    packet.setChunkX(s.x);
-                    packet.setChunkY(s.y);
-                    packet.setChunkZ(s.z);
+                    packet.setSubChunkBlockPosition(
+                        Vector3i.from(
+                            s.x,
+                            s.y,
+                            s.z
+                        )
+                    );
                     return packet;
                 });
                 if (b.layer == 1) {
