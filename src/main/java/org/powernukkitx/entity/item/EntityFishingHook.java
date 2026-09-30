@@ -51,6 +51,11 @@ public class EntityFishingHook extends SlenderProjectile {
     public int attractTimer = 0;
     public boolean caught = false;
     public int caughtTimer = 0;
+    /**
+     * @deprecated no longer written by the hook itself; use {@link #setCollisionEnabled(boolean)} and
+     * {@link #isCollisionEnabled()} instead. Still honoured by {@link #canCollide()} so existing plugins keep working.
+     */
+    @Deprecated(forRemoval = true, since = "3.0.6")
     @SuppressWarnings("java:S1845")
     public boolean canCollide = true;
 
@@ -85,9 +90,10 @@ public class EntityFishingHook extends SlenderProjectile {
         return 0.04f;
     }
 
+    // TODO: Remove method when removing canCollide
     @Override
     public boolean canCollide() {
-        return this.canCollide;
+        return super.canCollide() && this.canCollide;
     }
 
     @Override
@@ -272,13 +278,28 @@ public class EntityFishingHook extends SlenderProjectile {
                 }
             }
         } else if (this.shootingEntity != null) {
-            var eid = this.getDataProperty(ActorDataTypes.TARGET, 0L);
-            var targetEntity = this.getLevel().getEntity(eid);
-            if (eid != 0L && targetEntity != null && targetEntity.isAlive()) {
-                targetEntity.setMotion(this.shootingEntity.subtract(targetEntity).divide(8).add(0, 0.3, 0));
+            long eid = this.getDataProperty(ActorDataTypes.TARGET, 0L);
+            if (eid != 0L) {
+                Entity targetEntity = this.getLevel().getEntity(eid);
+                if (targetEntity != null && targetEntity.isAlive()) {
+                    this.pullEntity(targetEntity);
+                }
             }
         }
         this.close();
+    }
+
+    private void pullEntity(Entity target) {
+        double dx = this.shootingEntity.x - target.x;
+        double dy = (this.shootingEntity.y + 1.0) - target.y;
+        double dz = this.shootingEntity.z - target.z;
+        double distSq = dx * dx + dy * dy + dz * dz;
+
+        target.setMotion(new Vector3(
+                dx * 0.1,
+                Math.sqrt(Math.sqrt(distSq * 0.01) * 0.08) + dy * 0.1,
+                dz * 0.1
+        ));
     }
 
     @Override
@@ -329,7 +350,7 @@ public class EntityFishingHook extends SlenderProjectile {
 
     public void setTarget(long eid) {
         this.setDataProperty(ActorDataTypes.TARGET, eid);
-        this.canCollide = eid == 0;
+        this.setCollisionEnabled(eid == 0);
     }
 
     @Override
