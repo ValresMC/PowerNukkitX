@@ -1016,7 +1016,7 @@ public abstract class Block extends Position implements Metadatable, AxisAligned
 
         if (customDiggerSpeed != null) {
             speedMultiplier = customDiggerSpeed;
-            allowEfficiency = digger.getBoolean("use_efficiency");
+            allowEfficiency = digger != null && digger.getBoolean("use_efficiency");
         } else if (correctTool) {
             speedMultiplier = toolBreakTimeBonus0(item);
             allowEfficiency = true;

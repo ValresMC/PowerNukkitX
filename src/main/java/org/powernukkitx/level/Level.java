@@ -3700,6 +3700,8 @@ public class Level implements Metadatable {
             item = Item.AIR;
         }
 
+        drops = item.onBlockBroken(player, target, drops);
+
         if (this.gameRules.getBoolean(GameRule.DO_TILE_DROPS)) {
             if (!isSilkTouch && (player != null && ((player.isSurvival() || player.isAdventure() || immediateDestroy))) && dropExp > 0) {
                 this.dropExpOrb(vector.add(0.5, 0.5, 0.5), dropExp);

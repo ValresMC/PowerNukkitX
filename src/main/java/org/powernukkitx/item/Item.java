@@ -1523,6 +1523,23 @@ public abstract class Item implements Cloneable, ItemID {
         return false;
     }
 
+    /**
+     * Called after a successful block break, after wear and before item drops are spawned.
+     * Cancelled breaks do not invoke this callback. If the tool broke, the callback
+     * is invoked on the replacement air item. Existing break-event drop changes
+     * are included in {@code drops}; normal tile-drop rules still apply afterward.
+     * This runs synchronously in the caller's block-break context and must not be
+     * called asynchronously to mutate level or player state.
+     *
+     * @param player the player breaking the block, or null for non-player breaks
+     * @param block the original block that was broken
+     * @param drops the final drops selected by the normal break pipeline
+     * @return the non-null drops to pass to the normal item-spawning pipeline
+     */
+    public @NotNull Item[] onBlockBroken(@Nullable Player player, @NotNull Block block, @NotNull Item[] drops) {
+        return drops;
+    }
+
     public boolean useOn(Block block) {
         if (this.isTool()) return toolUseOnBlock(block);
         return false;

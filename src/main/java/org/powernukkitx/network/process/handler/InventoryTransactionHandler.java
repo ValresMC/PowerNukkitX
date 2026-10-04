@@ -452,17 +452,6 @@ public class InventoryTransactionHandler
             } else {
                 player.getInventory().sendContents(player);
             }
-        } else if (type.equals(ItemUseOnActorActionType.ATTACK)) {
-            if (target instanceof Player && !player.getAdventureSettings().get(AdventureSettings.Type.ATTACK_PLAYERS)
-                    || !(target instanceof Player) && !player.getAdventureSettings().get(AdventureSettings.Type.ATTACK_MOBS))
-                return;
-            if (target.runtimeId() == player.runtimeId()) {
-                PlayerHackDetectedEvent event = new PlayerHackDetectedEvent(player, PlayerHackDetectedEvent.HackType.INVALID_PVP);
-                player.getServer().getPluginManager().callEvent(event);
-            }
-        }
-
-            return;
         }
 
         if (
@@ -488,7 +477,7 @@ public class InventoryTransactionHandler
             return;
         }
 
-        if (target.getId() == player.getId()) {
+        if (target.runtimeId() == player.runtimeId()) {
             PlayerHackDetectedEvent event =
                 new PlayerHackDetectedEvent(
                     player,
@@ -624,84 +613,68 @@ public class InventoryTransactionHandler
                     player.getInventory()
                         .sendContents(player);
                 }
-            if (player.isSpectator()) entityDamageByEntityEvent.setCancelled();
-            if ((target instanceof Player) && !player.level.getGameRules().getBoolean(GameRule.PVP)) {
-                entityDamageByEntityEvent.setCancelled();
-            }
-            try {
-                if (!target.attack(entityDamageByEntityEvent)) {
-                    if (item.isTool() && player.isSurvival()) {
-                        player.getInventory().sendContents(player);
-                    }
-                    return;
-                }
-            } finally {
-                if (target instanceof EntityLiving living) {
-                    living.postAttack(player);
-                }
-            }
-            if (target instanceof EntityLiving && (player.isSurvival() || player.isAdventure())) {
-                player.getFoodData().exhaust(0.1);
-            }
-
                 return;
             }
         } finally {
             if (target instanceof EntityLiving living) {
                 living.postAttack(player);
             }
-            item.onPostAttack(
-                player,
+        }
+
+        if (
+            target instanceof EntityLiving &&
+                (player.isSurvival() || player.isAdventure())
+        ) {
+            player.getFoodData().exhaust(0.1);
+        }
+
+        item.onPostAttack(
+            player,
+            target,
+            damageEvent
+        );
+
+        if (item instanceof ItemMace mace) {
+            mace.onPostAttack(
                 target,
-                damageEvent
+                itemDamage
             );
+        }
 
-            if (item instanceof ItemMace mace) {
-                mace.onPostAttack(
-                    target,
-                    itemDamage
-                );
-            }
-
+        if (
+            item.isTool() &&
+                (
+                    player.isSurvival() ||
+                        player.isAdventure()
+                )
+        ) {
             if (
-                item.isTool() &&
-                    (
-                        player.isSurvival() ||
-                            player.isAdventure()
-                    )
+                item.useOn(target) &&
+                    item.getDamage() >= item.getMaxDurability()
             ) {
-                if (
-                    item.useOn(target) &&
-                        item.getDamage() >= item.getMaxDurability()
-                ) {
-                    player.getLevel().addSound(
-                        player,
-                        Sound.RANDOM_BREAK
-                    );
+                player.getLevel().addSound(
+                    player,
+                    Sound.RANDOM_BREAK
+                );
 
+                player.getInventory().setItem(
+                    transaction.getSlot(),
+                    Item.AIR
+                );
+            } else {
+                if (
+                    item.isNull() ||
+                        Objects.equals(
+                            player.getInventory()
+                                .getItemInMainHand()
+                                .getId(),
+                            item.getId()
+                        )
+                ) {
                     player.getInventory().setItem(
                         transaction.getSlot(),
-                        Item.AIR
+                        item
                     );
-                } else {
-                    if (
-                        item.isNull() ||
-                            Objects.equals(
-                                player.getInventory()
-                                    .getItemInMainHand()
-                                    .getId(),
-                                item.getId()
-                            )
-                    ) {
-                        player.getInventory().setItem(
-                            transaction.getSlot(),
-                            item
-                        );
-                    } else {
-                        player.getInventory().sendContents(player);
-                    }
-                }
-            }
                 } else {
                     logTriedToSetButHadInHand(
                         playerHandle,
