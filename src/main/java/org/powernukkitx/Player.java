@@ -220,7 +220,6 @@ import java.util.function.Consumer;
  */
 @Slf4j
 public class Player extends EntityHuman implements CommandSender, ChunkLoader, IPlayer, IScoreboardViewer {
-    /// static fields
     /**
      * An empty array of static constants that host the player
      */
