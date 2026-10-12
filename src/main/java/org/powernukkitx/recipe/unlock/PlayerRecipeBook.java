@@ -15,13 +15,8 @@ import org.powernukkitx.level.GameRule;
 import org.powernukkitx.nbt.tag.CompoundTag;
 import org.powernukkitx.nbt.tag.ListTag;
 import org.powernukkitx.nbt.tag.StringTag;
-import org.powernukkitx.nbt.tag.CompoundTag;
-import org.powernukkitx.nbt.tag.ListTag;
-import org.powernukkitx.nbt.tag.StringTag;
 import org.powernukkitx.nbt.tag.Tag;
 import org.powernukkitx.recipe.CraftingRecipe;
-import org.powernukkitx.recipe.Recipe;
-import org.powernukkitx.registry.Registries;
 import org.powernukkitx.recipe.Recipe;
 import org.powernukkitx.registry.Registries;
 

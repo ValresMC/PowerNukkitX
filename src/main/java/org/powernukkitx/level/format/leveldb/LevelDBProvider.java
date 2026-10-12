@@ -48,6 +48,7 @@ import it.unimi.dsi.fastutil.Pair;
 import it.unimi.dsi.fastutil.objects.ObjectArrayList;
 
 import org.iq80.leveldb.WriteBatch;
+import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
 import java.io.ByteArrayInputStream;
@@ -57,7 +58,6 @@ import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.lang.ref.WeakReference;
-import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -84,8 +84,6 @@ public class LevelDBProvider implements LevelProvider {
     protected final LevelDBStorage storage;
     protected final Level level;
     protected final String path;
-    protected CompoundTag worldDynamicProperties;
-    protected boolean worldDynamicPropertiesDirty;
     private long runtimeTime;
     private long runtimeCurrentTick;
     private boolean runtimeRaining;
@@ -105,13 +103,7 @@ public class LevelDBProvider implements LevelProvider {
      * {@link #emptySectionPayload(int)}.
      */
     private static final AtomicReferenceArray<byte[]> EMPTY_SECTION_PAYLOADS =
-    private static final AtomicReferenceArray<byte[]> EMPTY_SECTION_PAYLOADS =
-        new AtomicReferenceArray<>(1 << Byte.SIZE);
-    /**
-     * Network bytes the biome palette of an absent section serialises to. One value for the whole
-     * server: unlike the section payload this does not encode the section Y.
-     */
-    private static volatile byte[] emptyBiomePayload;
+            new AtomicReferenceArray<>(1 << Byte.SIZE);
 
     /**
      * @return int The nether coordinate scale for the world
@@ -268,10 +260,7 @@ public class LevelDBProvider implements LevelProvider {
         synchronized (CACHE) {
             this.storage = CACHE.computeIfAbsent(path, p -> {
                 try {
-                    return new LevelDBStorage(0, p, new Options()
-                        .createIfMissing(true)
-                        .compressionType(CompressionType.ZLIB_RAW)
-                        .blockSize(64 * 1024));
+                    return new LevelDBStorage(0, p);
                 } catch (IOException e) {
                     throw new UncheckedIOException("Failed to create LevelDBStorage instance", e);
                 }
@@ -403,44 +392,19 @@ public class LevelDBProvider implements LevelProvider {
         return false;
     }
 
-    public static synchronized void writeLevelDat(String pathName, DimensionData dimensionData, LevelDat levelDat) {
-        Path path = Path.of(pathName);
-        String levelDatName = "level.dat";
-        if (dimensionData.getDimensionId() != 0) {
-            levelDatName = "level_Dim%s.dat".formatted(dimensionData.getDimensionId());
-        }
-        Path levelDatPath = path.resolve(levelDatName);
-        Path backupPath = path.resolve(levelDatName + "_old");
-        Path tempPath = path.resolve(levelDatName + ".tmp");
-        try {
-            if (Files.isRegularFile(levelDatPath) && Files.size(levelDatPath) > levelDatMagic.length) {
-                Files.copy(levelDatPath, backupPath, StandardCopyOption.REPLACE_EXISTING);
-            }
-
-            var buffer = new ByteArrayOutputStream();
-            try (var nbtOutputStream = NbtUtils.createWriterLE(buffer)) {
-                nbtOutputStream.writeTag(createWorldDataNBT(levelDat));
-            }
-
-            try (var output = new FileOutputStream(tempPath.toFile())) {
-                output.write(levelDatMagic);
-                buffer.writeTo(output);
-                output.flush();
-                output.getFD().sync();
-            }
-            try {
-                Files.move(tempPath, levelDatPath, StandardCopyOption.ATOMIC_MOVE);
-            } catch (AtomicMoveNotSupportedException e) {
-                Files.move(tempPath, levelDatPath, StandardCopyOption.REPLACE_EXISTING);
-            }
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to write level dat: ", e);
-        } finally {
-            try {
-                Files.deleteIfExists(tempPath);
-            } catch (IOException ignored) {
-            }
-        }
+    /**
+     * Writes the canonical level.dat shared by all dimensions of a world.
+     * Synchronizes calls to this overload; callers must coordinate with other metadata writers.
+     *
+     * @param pathName world folder path
+     * @param dimensionData legacy dimension argument; ignored and may be null
+     * @param levelDat level data to persist
+     * @throws UncheckedIOException if saving fails
+     * @deprecated dimensions now share canonical world metadata; use {@link #writeLevelDat(String, LevelDat)}
+     */
+    @Deprecated
+    public static synchronized void writeLevelDat(@NotNull String pathName, @Nullable DimensionData dimensionData, @NotNull LevelDat levelDat) {
+        writeLevelDat(pathName, levelDat);
     }
 
     /**
@@ -510,17 +474,6 @@ public class LevelDBProvider implements LevelProvider {
             }
         }
     }
-        } catch (IOException e) {
-            throw new UncheckedIOException("Failed to write level dat: ", e);
-        } finally {
-            if (tempPath != null) {
-                try {
-                    Files.deleteIfExists(tempPath);
-                } catch (IOException ignored) {
-                }
-            }
-        }
-    }
 
     private static void writeIntLE(ByteArrayOutputStream output, int value) {
         output.write(value & 0xff);
@@ -548,6 +501,7 @@ public class LevelDBProvider implements LevelProvider {
             if (chunk == null && create) return this.loadChunk(index, chunkX, chunkZ, true);
             return chunk;
         }
+
         try {
             chunk = this.chunks.get(index);
 
@@ -557,31 +511,6 @@ public class LevelDBProvider implements LevelProvider {
                 } catch (IOException e) {
                     throw new UncheckedIOException("Failed to load chunk", e);
                 }
-                if (chunk == null) {
-                    if (create) {
-                        chunk = getOrPutChunk(index, this.getEmptyChunk(chunkX, chunkZ));
-                    }
-                } else {
-                    chunk = getOrPutChunk(index, chunk);
-                    if (Server.getInstance() != null && Server.getInstance().getSettings().chunkSettings().convertBDSChunks() && chunk.isPopulated()) {
-                        CompoundTag extra = chunk.getExtraData();
-                        if (extra == null || extra.isEmpty()) {
-                            ChunkConversion.convert(chunk);
-                        }
-                    }
-                }
-            } else {
-                if (Server.getInstance() != null && Server.getInstance().getSettings().chunkSettings().convertBDSChunks() && chunk.isPopulated()) {
-                    CompoundTag extra = chunk.getExtraData();
-                    if (extra == null || extra.isEmpty()) {
-                        ChunkConversion.convert(chunk);
-                    }
-                }
-            }
-        } finally {
-            loading.complete(chunk);
-        }
-                }
             }
 
             if (chunk == null) {
@@ -590,29 +519,6 @@ public class LevelDBProvider implements LevelProvider {
                 }
             } else {
                 chunk = getOrPutChunk(index, chunk);
-            }
-
-            loading.complete(chunk);
-        }
-        return chunk;
-    }
-
-    public Map<Long, List<LevelDBChunkSerializer.ScheduledTickInfo>> getScheduledTicksMap() {
-        return scheduledTicksMap;
-    }
-    public Map<Long, List<LevelDBChunkSerializer.NormalTickInfo>> getNormalTicksMap() {
-        return normalTicksMap;
-    }
-
-    public void restoreBlockTicks(Level level, IChunk chunk) {
-        long chunkKey = Level.chunkHash(chunk.getX(), chunk.getZ());
-
-        List<LevelDBChunkSerializer.ScheduledTickInfo> scheduledList = this.scheduledTicksMap.remove(chunkKey);
-        List<LevelDBChunkSerializer.NormalTickInfo> normalList = this.normalTicksMap.remove(chunkKey);
-
-        restoreScheduledTicks(level, chunk, scheduledList);
-        restoreNormalTicks(level, normalList);
-    }
             }
 
             loading.complete(chunk);

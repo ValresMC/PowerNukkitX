@@ -241,9 +241,6 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
     private static final double CREATIVE_BLOCK_REACH = 13;
     private static final double SURVIVAL_BLOCK_REACH = 7;
     private static final long POST_TELEPORT_GRACE_MS = 1000L;
-    private static final double CREATIVE_BLOCK_REACH = 13;
-    private static final double SURVIVAL_BLOCK_REACH = 7;
-    private static final long POST_TELEPORT_GRACE_MS = 1000L;
     private static final int BLOCK_BREAK_PROGRESS_SCALE = 65535;
     private static final double BLOCK_BREAK_SPEED_EPSILON = 0.0001;
     // The level-event speed is consumed by the Bedrock client's fixed-rate game tick, not the configurable server loop.
@@ -270,9 +267,6 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
      */
     public BlockFace breakingBlockFace = null;
     public EntityFishingHook fishing = null;
-    public long lastSkinChange;
-    protected long breakingBlockTime = 0;
-    protected double blockBreakProgress = 0;
     public long lastSkinChange;
     protected long breakingBlockTime = 0;
     protected double blockBreakProgress = 0;
@@ -739,7 +733,6 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
         }
         Block current = this.level.getBlock(this.breakingBlock, false);
         return current.getId().equals(this.breakingBlock.getId());
-    }
     }
 
     protected void resetBlockBreak() {

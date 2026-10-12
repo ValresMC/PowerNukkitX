@@ -3,7 +3,6 @@ package org.powernukkitx.network.process.handler;
 import java.util.EnumMap;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 import org.cloudburstmc.protocol.bedrock.data.actor.ActorFlags;
 import org.cloudburstmc.protocol.bedrock.data.payload.inventory.transaction.InventorySourceFlags;
@@ -53,28 +52,6 @@ import org.powernukkitx.math.BlockVector3;
 import org.powernukkitx.math.Vector3;
 import org.powernukkitx.network.process.PacketHandler;
 import org.powernukkitx.network.process.PlayerSessionHolder;
-import org.cloudburstmc.protocol.bedrock.data.actor.ActorFlags;
-import org.cloudburstmc.protocol.bedrock.data.payload.inventory.transaction.InventorySourceFlags;
-import org.cloudburstmc.protocol.bedrock.data.payload.inventory.transaction.InventorySourceType;
-import org.cloudburstmc.protocol.bedrock.data.payload.inventory.transaction.ItemReleaseActionType;
-import org.cloudburstmc.protocol.bedrock.data.payload.inventory.transaction.ItemUseActionType;
-import org.cloudburstmc.protocol.bedrock.data.payload.inventory.transaction.ItemUseOnActorActionType;
-import org.cloudburstmc.protocol.bedrock.data.payload.inventory.transaction.data.InventoryTransactionDataType;
-import org.cloudburstmc.protocol.bedrock.data.payload.inventory.transaction.data.ItemReleaseInventoryTransaction;
-import org.cloudburstmc.protocol.bedrock.data.payload.inventory.transaction.data.ItemUseInventoryTransaction;
-import org.cloudburstmc.protocol.bedrock.data.payload.inventory.transaction.data.ItemUseOnActorInventoryTransaction;
-import org.cloudburstmc.protocol.bedrock.packet.InventoryTransactionPacket;
-import org.cloudburstmc.protocol.bedrock.packet.UpdateBlockPacket;
-import org.jetbrains.annotations.NotNull;
-import org.powernukkitx.math.Vector3;
-import org.powernukkitx.network.process.PacketHandler;
-import org.powernukkitx.network.process.PlayerSessionHolder;
-
-import java.util.EnumMap;
-import java.util.Map;
-import java.util.Objects;
-
-import lombok.extern.slf4j.Slf4j;
 
 import lombok.extern.slf4j.Slf4j;
 
@@ -117,68 +94,13 @@ public class InventoryTransactionHandler
                     if (lastUseTick != -1) {
                         Item item = player.getInventory().getItemInMainHand();
 
-        Player player = playerHandle.player;
-
-        if (
-            packet.getTransaction()
-                .getType()
-                .equals(InventoryTransactionDataType.ITEM_USE)
-        ) {
-            handleUseItem(
-                playerHandle,
-                (ItemUseInventoryTransaction) packet.getTransaction()
-            );
-        } else if (
-            packet.getTransaction()
-                .getType()
-                .equals(InventoryTransactionDataType.ITEM_USE_ON_ACTOR)
-        ) {
-            handleUseItemOnEntity(
-                playerHandle,
-                (ItemUseOnActorInventoryTransaction)
-                    packet.getTransaction()
-            );
-        } else if (
-            packet.getTransaction()
-                .getType()
-                .equals(InventoryTransactionDataType.ITEM_RELEASE)
-        ) {
-            try {
-                final ItemReleaseInventoryTransaction transaction =
-                    (ItemReleaseInventoryTransaction)
-                        packet.getTransaction();
-
-                ItemReleaseActionType type =
-                    transaction.getActionType();
-
-                final Item itemFromNetwork =
-                    Item.fromNetwork(transaction.getItem());
-
-                if (type.equals(ItemReleaseActionType.RELEASE)) {
-                    int lastUseTick = player.getLastUseTick(
-                        itemFromNetwork.getId()
-                    );
-
-                    if (lastUseTick != -1) {
-                        Item item = player.getInventory()
-                            .getItemInMainHand();
-
-                        int ticksUsed =
-                            player.getLevel().getTick() -
-                                lastUseTick;
-
-                        if (
-                            item.isEdible() &&
-                                ticksUsed >= item.getUsingTicks()
-                        ) {
+                        int ticksUsed = player.getLevel().getTick() - lastUseTick;
+                        if (item.isEdible() && ticksUsed >= item.getUsingTicks()) {
                             if (item.onUse(player, ticksUsed)) {
                                 item.afterUse(player);
                             }
-                        } else if (
-                            !item.onRelease(player, ticksUsed)
-                        ) {
-                            player.getInventory()
-                                .sendContents(player);
+                        } else if (!item.onRelease(player, ticksUsed)) {
+                            player.getInventory().sendContents(player);
                         }
 
                         player.clearLastUsedItem();
@@ -186,10 +108,7 @@ public class InventoryTransactionHandler
                         player.getInventory().sendContents(player);
                     }
                 } else {
-                    log.debug(
-                        "Unexpected release item action consume from {}",
-                        player.getName()
-                    );
+                    log.debug("Unexpected release item action consume from {}", player.getName());
                 }
             } finally {
                 player.clearLastUsedItem();
@@ -206,8 +125,6 @@ public class InventoryTransactionHandler
                 final int slot = transaction.getActions().getActions().getFirst().getSlot();
                 final int count = Math.min(transaction.getActions().getActions().get(1).getToItem().getCount(), player.getInventory().getItem(slot).getCount());
                 dropHotBarItemForPlayer(slot, count, player);
-            }
-        }
             }
         }
     }
@@ -313,8 +230,6 @@ public class InventoryTransactionHandler
             if (player.isSpectator() || (player.getDataFlag(ActorFlags.SILENT) && !(target instanceof InventoryHolder))) {
                 interactEvent.setCancelled();
             }
-            playerHandle.setInteract();
-            player.getServer()
             playerHandle.setInteract();
 
             player.getServer()
@@ -761,32 +676,6 @@ public class InventoryTransactionHandler
                         }
                     }
                 }
-                player.getInventory().sendSlot(transaction.getSlot(), player);
-
-                if (blockVector.distanceSquared(player) > 10000) {
-                    return;
-                }
-
-                Block target = player.level.getBlock(blockVector.asVector3());
-
-                Block block = target.getSide(face);
-
-                player.level.sendBlocks(
-                    new Player[]{player},
-                    new Block[]{target, block},
-                    Set.of(UpdateBlockPacket.Flag.NO_GRAPHIC)
-                );
-
-                player.level.sendBlocks(
-                    new Player[]{player},
-                    new Block[]{
-                        target.getLevelBlockAtLayer(1),
-                        block.getLevelBlockAtLayer(1)
-                    },
-                    Set.of(UpdateBlockPacket.Flag.NO_GRAPHIC),
-                    1
-                );
-
                 resyncPlace(player, transaction);
             }
 
@@ -958,8 +847,6 @@ public class InventoryTransactionHandler
                 if (!player.spawned || !player.isAlive() || player.isCreative()) {
                     return;
                 }
-                    return;
-                }
 
                 player.resetInventory();
 
@@ -969,8 +856,8 @@ public class InventoryTransactionHandler
                 Item oldItem = item.clone();
 
                 if (
-                    player.isSurvival() ||
-                        player.isAdventure()
+                    (player.isSurvival() || player.isAdventure()) &&
+                        player.canInteract(blockVector.add(0.5, 0.5, 0.5), 7)
                 ) {
                     item = player.level.useBreakOn(
                         blockVector.asVector3(),
@@ -980,13 +867,7 @@ public class InventoryTransactionHandler
                         true
                     );
 
-                    if (
-                        player.canInteract(
-                            blockVector.add(0.5, 0.5, 0.5),
-                            7
-                        ) &&
-                            item != null
-                    ) {
+                    if (item != null) {
                         player.getFoodData().exhaust(0.005);
 
                         if (
