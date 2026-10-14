@@ -46,11 +46,11 @@ public class BlockSuspiciousGravel extends BlockBrushable {
 
     @Override
     protected Sound getHitSound() {
-        return Sound.HIT_SUSPICIOUS_GRAVEL;
+        return Sound.BRUSH_SUSPICIOUS_GRAVEL;
     }
 
     @Override
     protected Sound getBreakSound() {
-        return Sound.BREAK_SUSPICIOUS_GRAVEL;
+        return Sound.BRUSH_COMPLETED_SUSPICIOUS_GRAVEL;
     }
 }

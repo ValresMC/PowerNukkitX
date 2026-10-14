@@ -263,8 +263,6 @@ public class PlayerAuthInputHandler implements PacketHandler<PlayerAuthInputPack
                         && (blockPositionChanged || continueAfterPrediction)) {
                     playerHandle.onBlockBreakStart(Vector3.fromNetwork(blockPos.toFloat()), blockFace);
                 }
-                    playerHandle.onBlockBreakStart(Vector3.fromNetwork(blockPos.toFloat()), blockFace);
-                }
 
                 switch (action.getPlayerActionType()) {
                     case START_DESTROY_BLOCK -> playerHandle.onBlockBreakStart(Vector3.fromNetwork(blockPos.toFloat()), blockFace);

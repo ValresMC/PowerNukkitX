@@ -60,7 +60,6 @@ public class BlockFarmland extends BlockTransparent {
     public int getToolType() {
         return ItemTool.TYPE_SHOVEL;
     }
-    }
 
     @Override
     public int onUpdate(int type) {
@@ -77,9 +76,6 @@ public class BlockFarmland extends BlockTransparent {
         return true;
     }
 
-    public int getMoistureAmount() {
-        return 7;
-    }
     public int getMoistureAmount() {
         return 7;
     }

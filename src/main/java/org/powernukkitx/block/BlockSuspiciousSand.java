@@ -40,11 +40,11 @@ public class BlockSuspiciousSand extends BlockBrushable {
 
     @Override
     protected Sound getHitSound() {
-        return Sound.HIT_SUSPICIOUS_SAND;
+        return Sound.BRUSH_SUSPICIOUS_SAND;
     }
 
     @Override
     protected Sound getBreakSound() {
-        return Sound.BREAK_SUSPICIOUS_SAND;
+        return Sound.BRUSH_COMPLETED_SUSPICIOUS_SAND;
     }
 }
