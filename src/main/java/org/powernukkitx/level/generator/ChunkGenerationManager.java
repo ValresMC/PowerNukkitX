@@ -996,7 +996,9 @@ public final class ChunkGenerationManager {
             }
 
             if (loadedFromStorage) {
-                return ChunkGenerationState.NEEDS_CFRD;
+                return tasksByState.containsKey(ChunkGenerationState.NEEDS_CFRD)
+                    ? ChunkGenerationState.NEEDS_CFRD
+                    : ChunkGenerationState.NEEDS_LIGHTING;
             }
         } else if (!chunk.isInitiated()) {
             level.initializeAcquiredChunk(chunk);
