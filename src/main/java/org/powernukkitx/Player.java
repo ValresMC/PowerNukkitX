@@ -7698,6 +7698,10 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
         BLOCK
     }
 
+    /**
+     * Sends commands available to this player, generating each command instance once even when
+     * registered under several aliases. Permissions and translated data are evaluated per player.
+     */
     public void syncAvailableCommands() {
         AvailableCommandsPacket pk = new AvailableCommandsPacket();
         Map<String, CommandDataVersions> data = new HashMap<>();
@@ -7709,7 +7713,11 @@ public class Player extends EntityHuman implements CommandSender, ChunkLoader, I
         synchronized (commands) {
             snapshot = new ArrayList<>(commands.values());
         }
+        final Set<Command> processed = Collections.newSetFromMap(new IdentityHashMap<>());
         for (Command command : snapshot) {
+            if (!processed.add(command)) {
+                continue;
+            }
             if (!command.testPermissionSilent(this.getPlayer()) || !command.isRegistered() || command.isServerSideOnly()) {
                 continue;
             }

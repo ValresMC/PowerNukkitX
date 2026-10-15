@@ -196,6 +196,11 @@ public class LevelDBChunkSerializer {
         var biomeIds = new IntOpenHashSet();
 
         for (Palette<Integer> biomeSection : biomeSections) {
+            if (biomeSection.isEmpty()) {
+                biomeIds.add(biomeSection.get(0));
+                continue;
+            }
+
             for (int index = 0; index < ChunkSection.SIZE; index++) {
                 biomeIds.add(biomeSection.get(index));
             }

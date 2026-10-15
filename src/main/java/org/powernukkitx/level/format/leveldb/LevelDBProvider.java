@@ -750,8 +750,17 @@ public class LevelDBProvider implements LevelProvider {
         return byteBuf;
     }
 
+    /**
+     * Serializes client sub-chunk metadata under the chunk's existing batch locks, reusing
+     * encoded biomes and borders while the chunk and its sections are unchanged.
+     *
+     * @param x chunk X
+     * @param z chunk Z
+     * @return independently owned buffers; the caller must release both after use
+     * @throws ChunkException when the chunk does not exist
+     */
     @Override
-    public LevelProvider.SubChunkRequestData requestSubChunkModeData(int x, int z) {
+    public @NotNull LevelProvider.SubChunkRequestData requestSubChunkModeData(int x, int z) {
         IChunk chunk = this.getChunk(x, z, false);
         if (chunk == null) {
             throw new ChunkException("Invalid Chunk Set");
@@ -762,12 +771,36 @@ public class LevelDBProvider implements LevelProvider {
         AtomicReference<Integer> requestLimitRef = new AtomicReference<>(0);
 
         chunk.batchProcess(unsafeChunk -> {
+            final Chunk cacheChunk = chunk instanceof Chunk concreteChunk ? concreteChunk : null;
+            final Chunk.SubChunkNetworkPayload cached = cacheChunk != null ? cacheChunk.getSubChunkNetworkPayload() : null;
+            if (cacheChunk != null && cached == null) {
+                cacheChunk.beginSubChunkNetworkPayload();
+            }
             final ByteBuf biomeData = PooledByteBufAllocator.DEFAULT.ioBuffer();
             final ByteBuf borderBlockData = PooledByteBufAllocator.DEFAULT.ioBuffer();
             boolean success = false;
 
             try {
+                if (cached != null) {
+                    biomeData.writeBytes(cached.biomeData());
+                    borderBlockData.writeBytes(cached.borderBlockData());
+                    biomeDataRef.set(biomeData);
+                    borderBlockDataRef.set(borderBlockData);
+                    requestLimitRef.set(cached.requestLimit());
+                    success = true;
+                    return;
+                }
+
                 final ChunkSection[] sections = unsafeChunk.getSections();
+                final ChunkSection[] sectionSnapshot = cacheChunk != null ? sections.clone() : null;
+                final long[] versions = cacheChunk != null ? new long[sections.length] : null;
+                if (versions != null) {
+                    for (int i = 0; i < sections.length; i++) {
+                        if (sectionSnapshot[i] != null) {
+                            versions[i] = sectionSnapshot[i].blockChanges().get();
+                        }
+                    }
+                }
                 int requestLimit = 0;
 
                 for (int i = sections.length - 1; i >= 0; i--) {
@@ -792,6 +825,13 @@ public class LevelDBProvider implements LevelProvider {
                 }
 
                 writeBorderBlockData(borderBlockData, unsafeChunk);
+
+                if (cacheChunk != null) {
+                    cacheChunk.setSubChunkNetworkPayload(new Chunk.SubChunkNetworkPayload(
+                        sectionSnapshot, versions, ByteBufUtil.getBytes(biomeData),
+                        ByteBufUtil.getBytes(borderBlockData), requestLimit
+                    ));
+                }
 
                 biomeDataRef.set(biomeData);
                 borderBlockDataRef.set(borderBlockData);

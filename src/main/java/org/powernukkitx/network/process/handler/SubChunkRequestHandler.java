@@ -291,46 +291,62 @@ public class SubChunkRequestHandler implements PacketHandler<SubChunkRequestPack
     }
 
     private HeightMapResult createHeightMapResult(IChunk chunk, int subChunkY, boolean render) {
-        final ByteBuf heightMap = PooledByteBufAllocator.DEFAULT.ioBuffer(256, 256);
+        ByteBuf heightMap = null;
         final int subChunkMinY = subChunkY << 4;
         boolean allTooHigh = true;
         boolean allTooLow = true;
+        boolean success = false;
 
-        for (int z = 0; z < 16; z++) {
-            for (int x = 0; x < 16; x++) {
-                final int blockY = render ? chunk.getRenderHeightMap(x, z) : chunk.getHeightMap(x, z);
-                final int relativeY = blockY - subChunkMinY;
+        try {
+            for (int z = 0; z < 16; z++) {
+                for (int x = 0; x < 16; x++) {
+                    final int blockY = render ? chunk.getRenderHeightMap(x, z) : chunk.getHeightMap(x, z);
+                    final int relativeY = blockY - subChunkMinY;
+                    final int previousValue = allTooHigh ? 16 : -1;
+                    final int value;
 
-                if (relativeY > 15) {
-                    allTooLow = false;
-                    heightMap.writeByte(16);
-                } else if (relativeY < 0) {
-                    allTooHigh = false;
-                    heightMap.writeByte(-1);
-                } else {
-                    allTooHigh = false;
-                    allTooLow = false;
-                    heightMap.writeByte(relativeY);
+                    if (relativeY > 15) {
+                        allTooLow = false;
+                        value = 16;
+                    } else if (relativeY < 0) {
+                        allTooHigh = false;
+                        value = -1;
+                    } else {
+                        allTooHigh = false;
+                        allTooLow = false;
+                        value = relativeY;
+                    }
+
+                    if (heightMap == null && !allTooHigh && !allTooLow) {
+                        heightMap = PooledByteBufAllocator.DEFAULT.ioBuffer(256, 256);
+                        // Earlier columns all had the same out-of-range marker.
+                        for (int i = 0; i < (z << 4 | x); i++) {
+                            heightMap.writeByte(previousValue);
+                        }
+                    }
+                    if (heightMap != null) {
+                        heightMap.writeByte(value);
+                    }
                 }
             }
+
+            final HeightMapDataType type;
+
+            if (allTooHigh) {
+                type = HeightMapDataType.TOO_HIGH;
+            } else if (allTooLow) {
+                type = HeightMapDataType.TOO_LOW;
+            } else {
+                type = HeightMapDataType.HAS_DATA;
+            }
+
+            success = true;
+            return new HeightMapResult(type, heightMap);
+        } finally {
+            if (!success && heightMap != null) {
+                heightMap.release();
+            }
         }
-
-        final HeightMapDataType type;
-
-        if (allTooHigh) {
-            type = HeightMapDataType.TOO_HIGH;
-        } else if (allTooLow) {
-            type = HeightMapDataType.TOO_LOW;
-        } else {
-            type = HeightMapDataType.HAS_DATA;
-        }
-
-        if (type != HeightMapDataType.HAS_DATA) {
-            heightMap.release();
-            return new HeightMapResult(type, null);
-        }
-
-        return new HeightMapResult(type, heightMap);
     }
 
     private record HeightMapResult(HeightMapDataType type, ByteBuf buffer) {

@@ -89,6 +89,8 @@ public class Chunk implements IChunk {
      */
     private final AtomicBoolean networkPayloadStale = new AtomicBoolean(true);
     private final AtomicReference<NetworkPayload> networkPayload = new AtomicReference<>();
+    private final AtomicBoolean subChunkNetworkPayloadStale = new AtomicBoolean(true);
+    private final AtomicReference<SubChunkNetworkPayload> subChunkNetworkPayload = new AtomicReference<>();
     private volatile boolean holdsNetworkPayloads;
     private volatile long networkPayloadLastUse;
     private static final AtomicLong NETWORK_PAYLOAD_BYTES = new AtomicLong();
@@ -404,6 +406,7 @@ public class Chunk implements IChunk {
             });
 
             this.changes.set(0);
+            markNetworkPayloadStale();
             this.storageResolved = true;
         } finally {
             lightLock.unlockWrite(lightStamp);
@@ -1568,6 +1571,7 @@ public class Chunk implements IChunk {
      */
     void markNetworkPayloadStale() {
         this.networkPayloadStale.setRelease(true);
+        this.subChunkNetworkPayloadStale.setRelease(true);
     }
 
     /**
@@ -1668,6 +1672,67 @@ public class Chunk implements IChunk {
     }
 
     /**
+     * Cached metadata for client sub-chunk requests. Arrays are owned by the cache and must not
+     * be modified. Section identities and versions are captured before serialization.
+     *
+     * @param sections installed sections, including empty slots
+     * @param versions block/biome change counter for each section, zero for empty slots
+     * @param biomeData encoded biome palettes
+     * @param borderBlockData encoded border-block columns
+     * @param requestLimit highest non-empty section index plus one
+     */
+    @ApiStatus.Internal
+    public record SubChunkNetworkPayload(ChunkSection @NotNull [] sections, long @NotNull [] versions,
+                                        byte @NotNull [] biomeData, byte @NotNull [] borderBlockData,
+                                        int requestLimit) {
+    }
+
+    /**
+     * Returns metadata only while its section identities, versions and chunk invalidation state
+     * still match. Safe to call from any thread; serialization must use {@link #batchProcess}.
+     *
+     * @return cached metadata, or {@code null} when absent or stale
+     */
+    @ApiStatus.Internal
+    public @Nullable SubChunkNetworkPayload getSubChunkNetworkPayload() {
+        if (this.subChunkNetworkPayloadStale.get()) return null;
+        final SubChunkNetworkPayload payload = this.subChunkNetworkPayload.get();
+        if (payload == null) return null;
+        for (int i = 0; i < this.sections.length; i++) {
+            final ChunkSection section = this.sections[i];
+            if (section != payload.sections()[i]
+                    || section != null && section.blockChanges().get() != payload.versions()[i]) {
+                return null;
+            }
+        }
+        this.networkPayloadLastUse = System.nanoTime();
+        return payload;
+    }
+
+    /**
+     * Starts building sub-chunk metadata inside {@link #batchProcess}, before reading content or
+     * section versions. Only clears this cache, leaving the full chunk payload independent.
+     */
+    @ApiStatus.Internal
+    public void beginSubChunkNetworkPayload() {
+        discardSubChunkNetworkPayload(this.subChunkNetworkPayload.getAndSet(null));
+        this.subChunkNetworkPayloadStale.getAndSet(false);
+    }
+
+    /**
+     * Stores metadata after {@link #beginSubChunkNetworkPayload()} in the same chunk batch.
+     * Concurrent edits leave it stale; a full shared memory budget leaves it uncached.
+     *
+     * @param payload serialized data with the section snapshot taken before encoding
+     */
+    @ApiStatus.Internal
+    public void setSubChunkNetworkPayload(@NotNull SubChunkNetworkPayload payload) {
+        if (!reserveNetworkPayloadBytes(payload.biomeData().length + payload.borderBlockData().length)) return;
+        discardSubChunkNetworkPayload(this.subChunkNetworkPayload.getAndSet(payload));
+        touchNetworkPayloads();
+    }
+
+    /**
      * @return the cached network payload if it still matches this chunk's content, otherwise
      * {@code null}. Safe to call from any thread.
      */
@@ -1743,6 +1808,7 @@ public class Chunk implements IChunk {
     public void releaseNetworkPayloads() {
         this.holdsNetworkPayloads = false;
         discardNetworkPayload(this.networkPayload.getAndSet(null));
+        discardSubChunkNetworkPayload(this.subChunkNetworkPayload.getAndSet(null));
         for (int i = 0; i < this.sectionNetworkPayloads.length(); i++) {
             final SectionNetworkPayload old = this.sectionNetworkPayloads.getAndSet(i, null);
             if (old != null) {
@@ -1779,6 +1845,12 @@ public class Chunk implements IChunk {
     private static void discardNetworkPayload(@Nullable NetworkPayload old) {
         if (old != null) {
             releaseNetworkPayloadBytes(old.tail().length);
+        }
+    }
+
+    private static void discardSubChunkNetworkPayload(@Nullable SubChunkNetworkPayload old) {
+        if (old != null) {
+            releaseNetworkPayloadBytes(old.biomeData().length + old.borderBlockData().length);
         }
     }
 
